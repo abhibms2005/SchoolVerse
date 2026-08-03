@@ -26,6 +26,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Pin the Node runtime to 22 LTS — better-sqlite3 11.x ships prebuilt
+      # binaries for Node 22 but NOT for newer runtimes like Node 26 (Render's
+      # default when the engines range is open), which fails the native build.
+      # engines.node in package.json says the same thing; NODE_VERSION wins.
+      - key: NODE_VERSION
+        value: "22"
       - key: SESSION_SECRET
         generateValue: true
       # On a fresh DB, this seeds the demo data (8 rooms, 6 staff, 6 students,

@@ -9,7 +9,7 @@ An AI-powered school operations platform — paperwork in, system out. Express +
 
 ## Quick start
 
-Requires **Node ≥ 20** (developed on Node 22).
+Requires **Node 22.x** — pinned via `engines.node` in `package.json` (and `NODE_VERSION` in `render.yaml`). This matters on Render: better-sqlite3 11.x ships prebuilt binaries for Node 22 but not for newer runtimes like Node 26, so an open range lets Render pick a version whose native build fails. Upgrade to the N-API-based better-sqlite3 13.x when you want to move to a newer Node.
 
 ```bash
 npm install        # install dependencies
