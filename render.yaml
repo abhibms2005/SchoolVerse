@@ -32,12 +32,16 @@ services:
       # a 5-day timetable with seeded conflicts, attendance, forms + admin).
       - key: SEED_DEMO_ON_BOOT
         value: "true"
-      # Admin account — deliberately NO committed value. Render prompts you
-      # for these when you create the blueprint service (or set them later in
-      # Settings → Environment). The server refuses to boot/seeding without
-      # them, so the app can never fall back to a known default password.
+      # Admin account — deliberately NO committed value. `sync: false` is
+      # Render's valid blueprint syntax for this: it prompts you for the value
+      # when the blueprint is first created, and never overwrites what you set
+      # in Settings → Environment on later deploys. The server refuses to
+      # boot/seeding without them, so the app can never fall back to a known
+      # default password.
       - key: SEED_ADMIN_EMAIL
+        sync: false
       - key: SEED_ADMIN_PASSWORD
+        sync: false
       # Where the SQLite file + uploads live. Defaults keep the app in one
       # directory; point them at /var/data/* when a persistent disk is attached.
       - key: DB_PATH
