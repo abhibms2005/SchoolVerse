@@ -7,11 +7,13 @@
 # demo database on each boot, so the site always "works" — but any data you
 # enter through the dashboard disappears when the service sleeps.
 #
-# For real persistence, switch to a paid instance type AND attach a disk:
+# Defaults (DB_PATH / UPLOADS_DIR below) live INSIDE the project dir at
+# ./data/* — writable on the free tier, but wiped on restart / redeploy /
+# spin-down. For real persistence, switch to a paid instance type AND attach
+# a disk, then point the paths at the mounted disk:
 #   1. change  plan: free            →  plan: standard
 #   2. uncomment the `disk:` block below (mounts an SSD at /var/data)
-#   3. set DB_PATH=/var/data/schoolverse.db and UPLOADS_DIR=/var/data/uploads
-#      (values below already point there — they only persist if the disk is attached)
+#   3. change DB_PATH=/var/data/schoolverse.db and UPLOADS_DIR=/var/data/uploads
 # See README → "Deploying to Render" for the full walkthrough.
 
 services:
@@ -48,12 +50,14 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
-      # Where the SQLite file + uploads live. Defaults keep the app in one
-      # directory; point them at /var/data/* when a persistent disk is attached.
+      # Where the SQLite file + uploads live. Defaults are a writable path
+      # inside the project dir (works on the free tier's ephemeral disk; data
+      # is wiped on restart/redeploy/spin-down). With a persistent disk
+      # attached, point these at /var/data/* instead.
       - key: DB_PATH
-        value: /var/data/schoolverse.db
+        value: ./data/schoolverse.db
       - key: UPLOADS_DIR
-        value: /var/data/uploads
+        value: ./data/uploads
     # disk:
     #   name: schoolverse-data
     #   mountPath: /var/data

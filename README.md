@@ -132,8 +132,10 @@ resolved notifications, timetable edits) is lost when the service sleeps.
 
 **For real persistence:** pick a paid instance type and attach a disk. In
 `render.yaml` change `plan: free` → `plan: standard`, uncomment the `disk:`
-block, and keep `DB_PATH=/var/data/schoolverse.db` + `UPLOADS_DIR=/var/data/uploads`
-(they're already set — they only persist once the disk is mounted at `/var/data`).
+block, and set `DB_PATH=/var/data/schoolverse.db` + `UPLOADS_DIR=/var/data/uploads`
+(the defaults are `./data/*` inside the project dir — writable on the free
+tier but wiped on restart; they only persist once the disk is mounted at
+`/var/data`).
 Then your data survives restarts, redeploys and idle spin-down.
 
 > Note: SQLite + WAL works fine on Render's attached SSDs. Backups are on you
