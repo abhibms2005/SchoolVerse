@@ -1,0 +1,8 @@
+node_modules/
+db/*.db
+db/*.db-*
+public/uploads/*
+.env
+*.log
+.freebuff/
+.DS_Store

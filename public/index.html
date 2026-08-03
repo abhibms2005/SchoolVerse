@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SchoolVerse — AI-powered school operations</title>
+<meta name="description" content="SchoolVerse turns paperwork into a system that runs itself: AI document reading, auto-generated timetables, a unified data hub, and a proactive admin dashboard.">
+<meta name="theme-color" content="#14213D">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213D'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='38' font-weight='700' fill='%23FAF7F0' text-anchor='middle'%3ES%3C/text%3E%3Cpath d='M14 50 L50 14' stroke='%23C9A227' stroke-width='4'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- ================= NAV ================= -->
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="SchoolVerse — home">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-name">School<em>Verse</em></span>
+    </a>
+
+    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="navMenu" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+
+    <nav aria-label="Primary">
+      <ul class="nav-links" id="navMenu">
+        <li><a href="#product">Product</a></li>
+        <li><a href="#timetables">Timetables</a></li>
+        <li><a href="#dashboard">Dashboard</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+      </ul>
+    </nav>
+
+    <div class="nav-cta">
+      <a class="btn btn--gold" href="/dashboard.html">Open dashboard</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero" id="top">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <video class="hero-bg-video" id="heroVideo" autoplay muted loop playsinline
+           preload="auto" poster="mu-poster.png" aria-hidden="true" tabindex="-1">
+      <source src="ma.mp4" type="video/mp4">
+    </video>
+    <div class="hero-overlay" aria-hidden="true"></div>
+
+    <div class="hero-content">
+      <p class="hero-eyebrow reveal">AI-powered school operations</p>
+      <h1 class="reveal" style="--d:0.08s">The paperwork runs itself.<br>Your school <em>runs better.</em></h1>
+      <p class="hero-sub reveal" style="--d:0.16s">
+        SchoolVerse reads the forms on your desk, builds the timetable overnight,
+        keeps every record in one place — and tells you what needs attention
+        before it becomes a problem.
+      </p>
+      <div class="hero-ctas reveal" style="--d:0.24s">
+        <a class="btn btn--gold" href="#dashboard">See live data</a>
+        <a class="btn btn--ghost-paper" href="#product">How it works</a>
+      </div>
+
+      <div class="hero-stats reveal" style="--d:0.32s">
+        <div class="hero-stat"><div class="hero-stat-num">SCAN → DATA · SECONDS</div><div class="hero-stat-lbl">a scanned form becomes a record</div></div>
+        <div class="hero-stat"><div class="hero-stat-num">TIMETABLE · OVERNIGHT</div><div class="hero-stat-lbl">generated &amp; de-clashed automatically</div></div>
+        <div class="hero-stat"><div class="hero-stat-num">ISSUES · FLAGGED FIRST</div><div class="hero-stat-lbl">before they reach the classroom</div></div>
+      </div>
+    </div>
+
+    <div class="hero-cue" aria-hidden="true">Scroll<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+  </section>
+
+  <!-- ================= MARQUEE ================= -->
+  <section class="marquee" aria-label="Integrations">
+    <div class="marquee-track">
+      <div class="marquee-group">
+        <span class="marquee-item">CBSE</span>
+        <span class="marquee-item">ICSE</span>
+        <span class="marquee-item">IB</span>
+        <span class="marquee-item">State Boards</span>
+        <span class="marquee-item">Google Workspace</span>
+        <span class="marquee-item">RFID / Biometric</span>
+        <span class="marquee-item">WhatsApp</span>
+      </div>
+      <div class="marquee-group" aria-hidden="true">
+        <span class="marquee-item">CBSE</span>
+        <span class="marquee-item">ICSE</span>
+        <span class="marquee-item">IB</span>
+        <span class="marquee-item">State Boards</span>
+        <span class="marquee-item">Google Workspace</span>
+        <span class="marquee-item">RFID / Biometric</span>
+        <span class="marquee-item">WhatsApp</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PRODUCT / BENTO ================= -->
+  <section class="section" id="product">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow reveal">Product</p>
+        <h2 class="reveal" style="--d:0.05s">Four systems your office stops doing by hand</h2>
+        <p class="lede reveal" style="--d:0.1s">Each one replaces a paper ritual. Together they turn disconnected
+        processes into one quiet, competent system.</p>
+      </div>
+
+      <div class="bento">
+        <article class="card card--lg reveal">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
+          </div>
+          <h3>AI Document Reader</h3>
+          <p class="card-desc">Point a scanner at admission forms, fee receipts, transfer certificates and medical
+          records. Handwriting, tables, checkboxes — read, validated, and routed into the right records. No re-typing.</p>
+          <div class="card-art" aria-hidden="true">
+            <div class="mock-form">
+              <div class="mock-sheet">
+                <div class="rule" style="width:85%"></div>
+                <div class="rule rule--short"></div>
+                <div class="rule"></div>
+                <div class="rule rule--short rule--gold"></div>
+              </div>
+              <div class="mock-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+              <div class="mock-data">NAME <span class="mk">·</span> AARAV SHARMA<br>CLASS <span class="mk">·</span> 9B · ROLL 24<br>FEE <span class="mk">·</span> PAID ✓ · REC 0041<br>STATUS <span class="mk">·</span> VERIFIED</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card--sm reveal" style="--d:0.08s">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          </div>
+          <h3>Smart Timetables</h3>
+          <p class="card-desc">Generate a full term timetable in minutes. Teachers, rooms and periods are matched
+          automatically — double-bookings are caught and re-arranged before they reach a classroom.</p>
+          <div class="card-art" aria-hidden="true">
+            <div class="mock-tt">
+              <div>9A MATHS</div><div>10B SCI</div><div class="tt-cl">10A CHEM</div>
+              <div>9B ENG</div><div class="tt-ok">10B CHEM ✓</div><div>10A PHY</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card--sm reveal" style="--d:0.08s">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          </div>
+          <h3>Proactive Dashboard</h3>
+          <p class="card-desc">The office no longer hunts for problems — the dashboard flags them, ranks them, and
+          drafts the fix. Approve or adjust, not investigate.</p>
+          <div class="card-art" aria-hidden="true">
+            <div class="mock-notifs">
+              <div class="mock-notif mock-notif--warn"><span class="dot"></span>3 forms need review — AI found 2 unclear fields</div>
+              <div class="mock-notif mock-notif--ok"><span class="dot"></span>Attendance reconciled · 412/420 auto-marked</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card--lg reveal" style="--d:0.12s">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <h3>All-in-One Data Hub</h3>
+          <p class="card-desc">Admissions, attendance, fees, staff and academics — one record per student, updating
+          everywhere at once. The register you sign, the form you filed and the fee you chase are all the same fact now.</p>
+          <div class="card-art" aria-hidden="true">
+            <div class="mock-hub">
+              <div class="mock-chip">ADMISSIONS <span class="cnt">214</span></div>
+              <div class="mock-chip mock-chip--sync">ATTENDANCE <span class="cnt">98.1%</span></div>
+              <div class="mock-chip">FEES <span class="cnt">₹4.2L</span></div>
+              <div class="mock-chip mock-chip--sync">STAFF <span class="cnt">38</span></div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TIMETABLE (LIVE) ================= -->
+  <section class="section section--dark" id="timetables">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow reveal">Timetables</p>
+        <h2 class="reveal" style="--d:0.05s">A week, generated and de-clashed overnight</h2>
+        <p class="lede reveal" style="--d:0.1s">The system considers every teacher, room and period at once. When a clash
+        appears, it re-arranges on its own — and tells you what it changed. This grid is loaded live from the timetable.</p>
+      </div>
+
+      <div class="tt-wrap reveal" style="--d:0.12s" id="ttContainer">
+        <div class="skeleton skel-card" style="height:420px;border-radius:18px;"></div>
+      </div>
+
+      <div class="tt-legend reveal" style="--d:0.16s" id="ttLegend" hidden>
+        <span><i class="sw-free"></i>Free period</span>
+        <span><i class="sw-clash"></i>Clash — caught &amp; flagged</span>
+        <span><i class="sw-resolved"></i>Resolved — auto-rebooked</span>
+        <span><i class="sw-gap"></i>No teacher assigned</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DASHBOARD PREVIEW (LIVE) ================= -->
+  <section class="section" id="dashboard">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow reveal">Dashboard</p>
+        <h2 class="reveal" style="--d:0.05s">Proactive, not searched</h2>
+        <p class="lede reveal" style="--d:0.1s">Nothing waits in a drawer. Issues surface, get ranked, and come with a
+        drafted fix. These are the real notifications from the system right now.</p>
+      </div>
+
+      <div class="dash reveal" style="--d:0.12s">
+        <div class="dash-bar">
+          <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="dash-title">SCHOOLVERSE — LIVE NOTIFICATIONS</span>
+          <span class="dash-badge">LIVE</span>
+        </div>
+        <div class="dash-head">
+          <div>
+            <h3>Attention queue</h3>
+            <p class="dash-sub">Open items, newest first.</p>
+          </div>
+          <div class="dash-summary" id="dashSummary" hidden>
+            <b id="attentionCount">0</b> need attention
+          </div>
+        </div>
+        <ul class="notif-list" id="notifContainer">
+          <li><div class="skeleton skel-card" style="height:130px;"></div></li>
+          <li><div class="skeleton skel-card" style="height:130px;"></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ROADMAP / BONUS ================= -->
+  <section class="section" id="roadmap">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow reveal">Roadmap</p>
+        <h2 class="reveal" style="--d:0.05s">Next on the build list</h2>
+        <p class="lede reveal" style="--d:0.1s">Two capabilities the platform is designed to grow into.</p>
+      </div>
+
+      <div class="bonus-grid">
+        <article class="bonus-card reveal">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <h3>Smart Staffing — predictive</h3>
+          <p class="card-desc">Forecast next term's staffing needs from attendance trends, leave history and class
+          sizes — so a shortage is a plan, not a scramble.</p>
+          <div class="mock-chart" aria-hidden="true">
+            <p class="mock-chart-title">Science dept. workload · projected</p>
+            <div class="bars">
+              <div class="bar"><i style="height:42%"></i><small>APR</small></div>
+              <div class="bar"><i style="height:55%"></i><small>MAY</small></div>
+              <div class="bar bar--proj"><i style="height:74%"></i><small>JUN</small></div>
+              <div class="bar bar--proj"><i style="height:88%"></i><small>JUL</small></div>
+              <div class="bar bar--proj"><i style="height:68%"></i><small>AUG</small></div>
+            </div>
+            <p class="chart-note"><span class="lbl lbl--actual"></span>actual &nbsp; <span class="lbl lbl--proj"></span>projected → hire 1 more physics teacher</p>
+          </div>
+        </article>
+
+        <article class="bonus-card reveal" style="--d:0.08s">
+          <div class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </div>
+          <h3>Auto-Attendance — RFID + vision</h3>
+          <p class="card-desc">RFID cards at the gate and computer-vision roll-call mark attendance the moment
+          students walk in. The register fills itself.</p>
+          <div class="mock-cam" aria-hidden="true">
+            <div class="cam">
+              <div class="cam-corners"><i></i><i></i><i></i><i></i></div>
+              <div class="cam-scan"></div>
+              <div class="cam-badge">412/420 <b>MARKED</b> · 8 FLAGGED</div>
+            </div>
+            <div class="cam-readout">
+              <span>GATE 1 · 142 ✓</span>
+              <span>GATE 2 · 138 ✓</span>
+              <span class="ok">VISION ROLL-CALL · 132 ✓</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STATS (LIVE) ================= -->
+  <section class="section" id="stats">
+    <div class="wrap">
+      <div class="section-head section-head--center">
+        <p class="eyebrow reveal">Live from the system</p>
+        <h2 class="reveal" style="--d:0.05s">What SchoolVerse is doing right now</h2>
+        <p class="lede reveal" style="--d:0.1s">Counted from real records in the database — updated as the platform processes work.</p>
+      </div>
+
+      <div id="statsContainer">
+        <div class="stats-grid">
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BEFORE / AFTER ================= -->
+  <section class="section" id="compare">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow reveal">The difference</p>
+        <h2 class="reveal" style="--d:0.05s">Today vs. With SchoolVerse</h2>
+        <p class="lede reveal" style="--d:0.1s">An honest look at what changes.</p>
+      </div>
+
+      <div class="compare-grid">
+        <div class="compare-col compare-col--before reveal">
+          <p class="compare-head">Today</p>
+          <h3>The office after 6 pm</h3>
+          <ul class="compare-list">
+            <li><span class="mark" aria-hidden="true">✕</span><p>Admission forms sit in cabinets, re-typed into three different spreadsheets.</p></li>
+            <li><span class="mark" aria-hidden="true">✕</span><p>Timetables patched by hand — clashes discovered at the classroom door.</p></li>
+            <li><span class="mark" aria-hidden="true">✕</span><p>Attendance registers cross-checked across registers, apps and memory.</p></li>
+            <li><span class="mark" aria-hidden="true">✕</span><p>Problems surface only when a parent, teacher or inspector raises them.</p></li>
+          </ul>
+          <p class="compare-note">Work is accurate until it isn't, and nobody knows until later.</p>
+        </div>
+
+        <div class="compare-col compare-col--after reveal" style="--d:0.08s">
+          <p class="compare-head">With SchoolVerse</p>
+          <h3>The office before 9 am</h3>
+          <ul class="compare-list">
+            <li><span class="mark" aria-hidden="true">✓</span><p>Forms scanned, digitised and routed in seconds — one canonical record.</p></li>
+            <li><span class="mark" aria-hidden="true">✓</span><p>Timetables generated and de-clashed automatically, overnight.</p></li>
+            <li><span class="mark" aria-hidden="true">✓</span><p>Attendance auto-marked and synced everywhere at once.</p></li>
+            <li><span class="mark" aria-hidden="true">✓</span><p>The dashboard tells you what needs attention — before it becomes a problem.</p></li>
+          </ul>
+          <p class="compare-note">The workflow we're building toward — one screen, one source of truth.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="section section--dark cta" id="cta">
+    <div class="wrap cta-inner">
+      <p class="eyebrow reveal" style="justify-content:center;">Get started</p>
+      <h2 class="reveal" style="--d:0.05s">Give the school office <em>its weekends back.</em></h2>
+      <p class="reveal" style="--d:0.1s">SchoolVerse is built for busy school offices. See the live platform behind
+      the landing page — sign in and explore the dashboard.</p>
+      <div class="cta-buttons reveal" style="--d:0.15s">
+        <a class="btn btn--gold" href="/dashboard.html">Open the dashboard</a>
+        <a class="btn btn--ghost-paper" href="#roadmap">Read the roadmap</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a class="brand" href="#top" aria-label="SchoolVerse — back to top">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span class="brand-name">School<em>Verse</em></span>
+        </a>
+        <p class="footer-blurb">An AI-powered school operations platform. Paperwork in, system out — a well-run
+        school office, minus the running.</p>
+      </div>
+
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#product">AI Document Reader</a></li>
+          <li><a href="#product">Smart Timetables</a></li>
+          <li><a href="#dashboard">Proactive Dashboard</a></li>
+          <li><a href="#product">Data Hub</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Roadmap</h4>
+        <ul>
+          <li><a href="#roadmap">Predictive Staffing</a></li>
+          <li><a href="#roadmap">Auto-Attendance</a></li>
+          <li><a href="#roadmap">Parent Portal</a></li>
+          <li><a href="#roadmap">Fee Automation</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h4>Platform</h4>
+        <ul>
+          <li><a href="/dashboard.html">Dashboard</a></li>
+          <li><a href="/login.html">Sign in</a></li>
+          <li><a href="#cta">Request a pilot</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>© 2026 SchoolVerse</span>
+      <span>Built with vanilla HTML / CSS / JS · Express · SQLite</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* --- hero video (same behaviour as before) --- */
+  var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var isSmallScreen = window.matchMedia('(max-width: 699px)').matches;
+  var video = document.getElementById('heroVideo');
+  function usePosterOnly() {
+    if (!video) return;
+    video.pause();
+    video.removeAttribute('src');
+    video.querySelectorAll('source').forEach(function (s) { s.remove(); });
+    video.load();
+    video.classList.add('video-disabled');
+  }
+  if (prefersReduced || isSmallScreen) {
+    usePosterOnly();
+  } else {
+    var showVideo = function () { video.classList.add('is-ready'); };
+    if (video.readyState >= 2) showVideo();
+    else {
+      video.addEventListener('canplay', showVideo, { once: true });
+      video.addEventListener('loadeddata', showVideo, { once: true });
+    }
+    video.addEventListener('error', usePosterOnly, { once: true });
+  }
+
+  /* --- nav scroll shadow + mobile menu --- */
+  var nav = document.getElementById('nav');
+  function onScroll() { nav.classList.toggle('is-scrolled', window.scrollY > 8); }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  var burger = document.getElementById('navToggle');
+  var menu = document.getElementById('navMenu');
+  function closeMenu() { nav.classList.remove('is-open'); burger.setAttribute('aria-expanded', 'false'); }
+  burger.addEventListener('click', function () {
+    var open = nav.classList.toggle('is-open');
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  menu.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', closeMenu); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenu(); });
+
+  initReveals();
+
+  /* --- LIVE: timetable --- */
+  var ttContainer = document.getElementById('ttContainer');
+  var ttLegend = document.getElementById('ttLegend');
+  function loadTimetable() {
+    ttContainer.innerHTML = '<div class="skeleton skel-card" style="height:420px;border-radius:18px;"></div>';
+    ttLegend.hidden = true;
+    apiFetch('/api/timetable')
+      .then(function (data) {
+        if (!data.slots || data.slots.length === 0) {
+          emptyState(ttContainer, {
+            title: 'No timetable yet',
+            hint: 'Add timetable slots in the dashboard to see the weekly grid appear here.',
+            ctaText: 'Open dashboard', ctaHref: '/dashboard.html',
+          });
+          return;
+        }
+        ttContainer.innerHTML = '';
+        ttContainer.appendChild(buildTimetable(data, { showFix: false }));
+        ttLegend.hidden = false;
+      })
+      .catch(function (err) {
+        errorState(ttContainer, { message: err.message, onRetry: loadTimetable });
+      });
+  }
+  loadTimetable();
+
+  /* --- LIVE: notifications preview --- */
+  var notifContainer = document.getElementById('notifContainer');
+  var dashSummary = document.getElementById('dashSummary');
+  var attentionCount = document.getElementById('attentionCount');
+  function loadNotifications() {
+    notifContainer.innerHTML =
+      '<li><div class="skeleton skel-card" style="height:130px;"></div></li>' +
+      '<li><div class="skeleton skel-card" style="height:130px;"></div></li>';
+    dashSummary.hidden = true;
+    apiFetch('/api/notifications?limit=4')
+      .then(function (data) {
+        var items = data.notifications || [];
+        if (items.length === 0) {
+          emptyState(notifContainer, {
+            title: 'Everything is quiet',
+            hint: 'No open notifications right now. The dashboard will surface the next issue as soon as it appears.',
+            ctaText: 'Open dashboard', ctaHref: '/dashboard.html',
+          });
+          return;
+        }
+        notifContainer.innerHTML = '';
+        items.forEach(function (n) {
+          notifContainer.appendChild(buildNotifCard(n, null)); // read-only preview on the landing
+        });
+        // Show the true open count (data.total), not the truncated preview length.
+        attentionCount.textContent = data.total || items.length;
+        dashSummary.hidden = false;
+      })
+      .catch(function (err) {
+        errorState(notifContainer, { message: err.message, onRetry: loadNotifications });
+      });
+  }
+  loadNotifications();
+
+  /* --- LIVE: stats --- */
+  var statsContainer = document.getElementById('statsContainer');
+  function loadStats() {
+    statsContainer.innerHTML =
+      '<div class="stats-grid">' +
+      '<div class="skeleton skel-card"></div><div class="skeleton skel-card"></div>' +
+      '<div class="skeleton skel-card"></div><div class="skeleton skel-card"></div>' +
+      '</div>';
+    apiFetch('/api/stats')
+      .then(function (s) {
+        if (!s.has_data) {
+          emptyState(statsContainer, {
+            title: 'No data yet',
+            hint: 'Connect a school to see live stats — forms processed, clashes resolved and attendance auto-marked.',
+            ctaText: 'Open dashboard', ctaHref: '/dashboard.html',
+          });
+          return;
+        }
+        statsContainer.innerHTML = '';
+        var grid = h('div', 'stats-grid');
+        [
+          { value: s.forms_verified, suffix: '', label: 'Forms digitised & verified', note: 'from uploaded records' },
+          { value: s.clashes_resolved, suffix: '', label: 'Timetable clashes auto-resolved', note: 'before reaching class' },
+          { value: s.attendance_auto_pct, suffix: '%', label: 'Attendance auto-marked', note: 'RFID + vision roll-call' },
+          { value: s.students, suffix: '', label: 'Students on the platform', note: 'one record each' },
+        ].forEach(function (stat, i) {
+          var card = h('div', 'stat reveal is-visible');
+          card.style.transitionDelay = (i * 0.06) + 's';
+          var num = h('div', 'stat-num');
+          var span = h('span', 'stat-value', '0');
+          countUpOnView(span, function () { return stat.value; });
+          num.appendChild(span);
+          if (stat.suffix) num.appendChild(h('span', 'suffix', stat.suffix));
+          card.appendChild(num);
+          card.appendChild(h('p', 'stat-label', stat.label));
+          card.appendChild(h('p', 'stat-note', stat.note));
+          grid.appendChild(card);
+        });
+        statsContainer.appendChild(grid);
+      })
+      .catch(function (err) {
+        errorState(statsContainer, { message: err.message, onRetry: loadStats });
+      });
+  }
+  loadStats();
+})();
+</script>
+</body>
+</html>

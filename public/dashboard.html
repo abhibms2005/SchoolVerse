@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — SchoolVerse</title>
+<meta name="theme-color" content="#14213D">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213D'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='38' font-weight='700' fill='%23FAF7F0' text-anchor='middle'%3ES%3C/text%3E%3Cpath d='M14 50 L50 14' stroke='%23C9A227' stroke-width='4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- App top bar — clearly different from the marketing nav -->
+<header class="app-topbar">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="SchoolVerse — landing page">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-name">School<em>Verse</em></span>
+    </a>
+    <div class="app-user">
+      <span class="avatar" aria-hidden="true">A</span>
+      <span id="userEmail">admin</span>
+      <button class="btn btn--small btn--ghost-paper" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="app-main" id="main">
+  <div class="app-head">
+    <div>
+      <p class="eyebrow" style="margin-bottom:0.6rem;">Admin console</p>
+      <h1>Good morning, Principal</h1>
+      <p class="app-sub" id="appSub">Loading your school's data…</p>
+    </div>
+    <div class="app-actions">
+      <button class="btn btn--ghost" id="rescanBtn">Re-check timetable</button>
+      <a class="btn btn--gold" href="#forms-tab" id="uploadCta">Upload a form</a>
+    </div>
+  </div>
+
+  <div id="topError"></div>
+
+  <!-- Tabs -->
+  <nav class="app-tabs" aria-label="Dashboard sections">
+    <button type="button" role="tab" aria-selected="true" data-tab="overview">Overview</button>
+    <button type="button" role="tab" aria-selected="false" data-tab="timetable">Timetable</button>
+    <button type="button" role="tab" aria-selected="false" data-tab="forms">Forms</button>
+    <button type="button" role="tab" aria-selected="false" data-tab="notifications">Notifications</button>
+  </nav>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section class="tab-panel" id="panel-overview" role="tabpanel">
+    <div class="app-stats" id="overviewStats"></div>
+    <div class="app-grid">
+      <div class="app-panel">
+        <div class="app-panel-head"><h2>Recent notifications</h2><a class="btn btn--small btn--ghost" href="#notifications-tab">View all</a></div>
+        <div class="app-panel-body" id="overviewNotifs"></div>
+      </div>
+      <div class="app-panel">
+        <div class="app-panel-head"><h2>Attendance today</h2></div>
+        <div class="app-panel-body" id="attendancePanel"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TIMETABLE ============ -->
+  <section class="tab-panel" id="panel-timetable" role="tabpanel" hidden>
+    <div class="app-panel">
+      <div class="app-panel-head">
+        <h2>Weekly timetable</h2>
+        <span class="mono" id="ttStatus"></span>
+      </div>
+      <div class="app-panel-body">
+        <div class="tt-wrap" id="ttWrap"></div>
+        <p class="tt-legend" style="margin-top:1.2rem;color:var(--ink-muted);" id="ttLegend">
+          <span style="color:var(--ink-muted);"><i class="sw-free" style="border-color:var(--line);"></i>Free period</span>
+          <span style="color:var(--ink-muted);"><i class="sw-clash" style="border-color:var(--line);"></i>Clash</span>
+          <span style="color:var(--ink-muted);"><i class="sw-resolved" style="border-color:var(--line);"></i>Auto-resolved</span>
+          <span style="color:var(--ink-muted);"><i class="sw-gap" style="border-color:var(--line);"></i>No teacher</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FORMS ============ -->
+  <section class="tab-panel" id="panel-forms" role="tabpanel" hidden>
+    <div class="app-grid">
+      <div class="app-panel">
+        <div class="app-panel-head"><h2>Upload a physical form</h2></div>
+        <div class="app-panel-body">
+          <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload a form">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <p>Drop an image or PDF here, or click to browse</p>
+            <small>stored as a pending review record — OCR extraction is next on the roadmap</small>
+          </div>
+          <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none">
+          <div class="form-grid">
+            <div class="field">
+              <label for="formStudent">Student (optional)</label>
+              <select id="formStudent"><option value="">— no student linked —</option></select>
+            </div>
+            <div class="field">
+              <label for="formType">Form type</label>
+              <select id="formType">
+                <option value="admission">Admission</option>
+                <option value="fee_receipt">Fee receipt</option>
+                <option value="medical">Medical</option>
+                <option value="transfer_certificate">Transfer certificate</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn--gold" id="uploadBtn" style="margin-top:1.2rem;" disabled>Upload form</button>
+          <div id="uploadResult" style="margin-top:1rem;"></div>
+        </div>
+      </div>
+
+      <div class="app-panel">
+        <div class="app-panel-head"><h2>Forms queue</h2><span class="mono" id="formsCount"></span></div>
+        <div class="app-panel-body app-table-wrap" id="formsTable"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NOTIFICATIONS ============ -->
+  <section class="tab-panel" id="panel-notifications" role="tabpanel" hidden>
+    <div class="app-panel">
+      <div class="app-panel-head">
+        <h2>Notification centre</h2>
+        <label class="mono" style="display:flex;align-items:center;gap:0.5rem;color:var(--ink-muted);">
+          <input type="checkbox" id="showResolved" checked> show resolved
+        </label>
+      </div>
+      <div class="app-panel-body" id="notifAll"></div>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- state ---------- */
+  var state = {
+    stats: null,
+    timetable: null,
+    students: [],
+  };
+  var currentTab = 'overview';
+
+  /* ---------- auth ---------- */
+  apiFetch('/api/auth/me')
+    .then(function (me) { document.getElementById('userEmail').textContent = me.email; })
+    .catch(function () { /* redirect handled by apiFetch */ });
+
+  document.getElementById('logoutBtn').addEventListener('click', function () {
+    apiFetch('/api/auth/logout', { method: 'POST' })
+      .finally(function () { window.location.href = '/login.html'; });
+  });
+
+  /* ---------- tabs ---------- */
+  var tabButtons = document.querySelectorAll('.app-tabs button');
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () { switchTab(btn.dataset.tab); });
+  });
+  function switchTab(name) {
+    currentTab = name;
+    tabButtons.forEach(function (b) {
+      var on = b.dataset.tab === name;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    ['overview', 'timetable', 'forms', 'notifications'].forEach(function (t) {
+      document.getElementById('panel-' + t).hidden = t !== name;
+    });
+    if (name === 'timetable') loadTimetable();
+    if (name === 'forms') { loadStudents(); loadForms(); }
+    if (name === 'notifications') loadAllNotifications();
+  }
+
+  function errorTop(message) {
+    var box = document.getElementById('topError');
+    box.innerHTML = '';
+    box.appendChild(errorBanner(message));
+  }
+
+  /* ---------- overview ---------- */
+  function loadOverview() {
+    var statsEl = document.getElementById('overviewStats');
+    var notifEl = document.getElementById('overviewNotifs');
+    var attEl = document.getElementById('attendancePanel');
+    skeletonCard(statsEl);
+
+    Promise.all([apiFetch('/api/stats'), apiFetch('/api/notifications?limit=5'), apiFetch('/api/attendance/summary')])
+      .then(function (results) {
+        var stats = results[0], notifs = results[1].notifications || [], att = results[2];
+        state.stats = stats;
+        document.getElementById('appSub').textContent =
+          stats.students + ' students · ' + stats.staff + ' staff · ' + stats.rooms + ' rooms';
+
+        statsEl.innerHTML = '';
+        [
+          { lbl: 'Open items', val: stats.open_notifications, sub: 'needing attention' },
+          { lbl: 'Forms verified', val: stats.forms_verified, sub: 'of ' + stats.forms_total + ' uploaded' },
+          { lbl: 'Attendance auto', val: stats.attendance_auto_pct, suffix: '%', sub: 'RFID + vision' },
+          { lbl: 'Clashes resolved', val: stats.clashes_resolved, sub: 'of ' + stats.clashes_detected + ' detected' },
+        ].forEach(function (s) {
+          var card = h('div', 'app-stat');
+          card.appendChild(h('p', 'app-stat-lbl', s.lbl));
+          var val = h('p', 'app-stat-val', '');
+          var n = h('span', '', String(s.val));
+          val.appendChild(n);
+          if (s.suffix) val.appendChild(h('small', '', s.suffix));
+          card.appendChild(val);
+          card.appendChild(h('p', 'app-stat-sub', s.sub));
+          statsEl.appendChild(card);
+        });
+
+        if (notifs.length === 0) {
+          emptyState(notifEl, { title: 'Everything is quiet', hint: 'No open notifications. The next issue will appear here the moment the system catches it.' });
+        } else {
+          notifEl.innerHTML = '';
+          notifs.forEach(function (n) {
+            notifEl.appendChild(buildNotifCard(n, resolveNotif));
+          });
+        }
+
+        renderAttendance(att, attEl);
+      })
+      .catch(function (err) {
+        errorState(statsEl, { message: err.message, onRetry: loadOverview });
+        notifEl.innerHTML = '';
+        attEl.innerHTML = '';
+        errorTop(err.message);
+      });
+  }
+
+  function renderAttendance(att, container) {
+    container.innerHTML = '';
+    var byMethod = {};
+    (att.by_method || []).forEach(function (m) { byMethod[m.method] = m.c; });
+    var total = att.total || 0;
+
+    var summary = h('div', '');
+    summary.appendChild(h('p', '', 'Total records: ' + total));
+    var bars = h('div', 'mock-chart', '');
+    var barRow = h('div', 'bars', '');
+    [['manual', byMethod.manual || 0, 'var(--navy)'], ['RFID', byMethod.RFID || 0, 'var(--gold)'], ['CV', byMethod.CV || 0, 'var(--teal)']].forEach(function (b) {
+      var bar = h('div', 'bar', '');
+      var i = h('i', '', '');
+      i.style.height = Math.max(6, Math.round(((b[1] / Math.max(total, 1)) * 100))) + '%';
+      i.style.background = b[2];
+      bar.appendChild(i);
+      bar.appendChild(h('small', '', b[0]));
+      barRow.appendChild(bar);
+    });
+    bars.appendChild(barRow);
+    container.appendChild(bars);
+
+    var ul = h('ul', 'app-notif-list', '');
+    ul.style.marginTop = '1rem';
+    (att.today_rows || []).slice(0, 6).forEach(function (r) {
+      var li = h('li', 'app-notif app-notif--' + (r.status === 'absent' ? 'urgent' : 'ok'));
+      var body = h('div', 'app-notif-body');
+      body.appendChild(h('h3', '', r.student_name + ' · ' + r.class));
+      body.appendChild(h('p', '', r.status + ' — via ' + r.method));
+      li.appendChild(body);
+      ul.appendChild(li);
+    });
+    if ((att.today_rows || []).length === 0) {
+      container.appendChild(h('p', 'mono', 'No attendance rows recorded yet.'));
+    } else {
+      container.appendChild(ul);
+    }
+  }
+
+  /* ---------- timetable ---------- */
+  function loadTimetable() {
+    var wrap = document.getElementById('ttWrap');
+    var status = document.getElementById('ttStatus');
+    wrap.innerHTML = '<div class="skeleton skel-card" style="height:420px;border-radius:18px;"></div>';
+    apiFetch('/api/timetable')
+      .then(function (data) {
+        state.timetable = data;
+        if (!data.slots || data.slots.length === 0) {
+          emptyState(wrap, { title: 'No timetable yet', hint: 'Add slots to get started. The conflict detector watches every new slot.' });
+          status.textContent = '';
+          return;
+        }
+        wrap.innerHTML = '';
+        wrap.appendChild(buildTimetable(data, {
+          showFix: true,
+          onFix: function (slot, roomId) { reassignSlot(slot, roomId); },
+        }));
+        var clashCount = data.slots.filter(function (s) { return s.conflict === 1; }).length;
+        var gapCount = data.slots.filter(function (s) { return s.staff_id === null; }).length;
+        status.textContent = clashCount + ' clash' + (clashCount === 1 ? '' : 'es') + ' · ' + gapCount + ' unassigned';
+      })
+      .catch(function (err) { errorState(wrap, { message: err.message, onRetry: loadTimetable }); });
+  }
+
+  function reassignSlot(slot, roomId) {
+    apiFetch('/api/timetable/slots/' + slot.id + '/reassign', { method: 'PATCH', body: { room_id: roomId } })
+      .then(function () {
+        loadTimetable();
+        loadOverview();
+        rescan();
+      })
+      .catch(function (err) { errorTop('Could not reassign: ' + err.message); });
+  }
+
+  /* ---------- conflict rescan ---------- */
+  var rescanBtn = document.getElementById('rescanBtn');
+  rescanBtn.addEventListener('click', rescan);
+  function rescan() {
+    rescanBtn.disabled = true;
+    rescanBtn.textContent = 'Checking…';
+    apiFetch('/api/timetable/detect-conflicts', { method: 'POST' })
+      .then(function (r) {
+        rescanBtn.textContent = 'Re-check timetable';
+        rescanBtn.disabled = false;
+        if (currentTab === 'timetable') loadTimetable();
+        loadOverview();
+      })
+      .catch(function (err) {
+        rescanBtn.textContent = 'Re-check timetable';
+        rescanBtn.disabled = false;
+        errorTop('Scan failed: ' + err.message);
+      });
+  }
+
+  /* ---------- notifications ---------- */
+  function resolveNotif(n) {
+    return apiFetch('/api/notifications/' + n.id + '/resolve', { method: 'PATCH' })
+      .then(function () {
+        if (currentTab === 'notifications') loadAllNotifications();
+        else loadOverview();
+        loadTimetable();
+      });
+  }
+
+  function loadAllNotifications() {
+    var container = document.getElementById('notifAll');
+    var showResolved = document.getElementById('showResolved').checked;
+    skeletonCard(container);
+    apiFetch('/api/notifications?include_resolved=' + (showResolved ? '1' : '0') + '&limit=100')
+      .then(function (data) {
+        var items = data.notifications || [];
+        if (items.length === 0) {
+          emptyState(container, { title: 'No notifications', hint: showResolved ? '' : 'Try enabling "show resolved" to see history.' });
+          return;
+        }
+        container.innerHTML = '';
+        var ul = h('ul', 'app-notif-list');
+        items.forEach(function (n) { ul.appendChild(buildNotifCard(n, resolveNotif)); });
+        container.appendChild(ul);
+      })
+      .catch(function (err) { errorState(container, { message: err.message, onRetry: loadAllNotifications }); });
+  }
+  document.getElementById('showResolved').addEventListener('change', loadAllNotifications);
+
+  /* ---------- forms ---------- */
+  function loadStudents() {
+    apiFetch('/api/roster/students')
+      .then(function (data) {
+        state.students = data.students || [];
+        var sel = document.getElementById('formStudent');
+        state.students.forEach(function (s) {
+          var opt = h('option', '', s.name + ' · ' + s.class);
+          opt.value = s.id;
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function () { /* non-fatal */ });
+  }
+
+  function loadForms() {
+    var container = document.getElementById('formsTable');
+    var count = document.getElementById('formsCount');
+    skeletonCard(container);
+    apiFetch('/api/forms')
+      .then(function (data) {
+        var forms = data.forms || [];
+        count.textContent = forms.length + ' total';
+        if (forms.length === 0) {
+          emptyState(container, { title: 'No forms yet', hint: 'Upload a form to start the queue.' });
+          return;
+        }
+        var table = h('table', 'app-table');
+        var thead = h('thead');
+        var hr = h('tr');
+        ['Student', 'Type', 'Status', 'Uploaded', ''].forEach(function (t) { hr.appendChild(h('th', '', t)); });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        var tbody = h('tbody');
+        forms.forEach(function (f) {
+          var tr = h('tr');
+          tr.appendChild(h('td', '', f.student_name || ('#' + (f.student_id || '?'))));
+          tr.appendChild(h('td', 'num', f.form_type.replace('_', ' ')));
+          var statusTd = h('td', '');
+          var badge = h('span', 'badge ' + (f.status === 'verified' ? 'badge--ok' : f.status === 'rejected' ? 'badge--muted' : 'badge--warning'), f.status.replace('_', ' '));
+          statusTd.appendChild(badge);
+          tr.appendChild(statusTd);
+          tr.appendChild(h('td', 'num', timeAgo(f.uploaded_at)));
+          var act = h('td', '');
+          if (f.status === 'pending_review') {
+            var wrap = h('div', 'actions');
+            var v = h('button', 'btn btn--small btn--teal', 'Verify');
+            v.addEventListener('click', function () {
+              apiFetch('/api/forms/' + f.id + '/verify', { method: 'PATCH' })
+                .then(function () { loadForms(); loadOverview(); })
+                .catch(function (err) { errorTop(err.message); });
+            });
+            var r = h('button', 'btn btn--small btn--ghost', 'Reject');
+            r.addEventListener('click', function () {
+              apiFetch('/api/forms/' + f.id + '/reject', { method: 'PATCH' })
+                .then(function () { loadForms(); })
+                .catch(function (err) { errorTop(err.message); });
+            });
+            wrap.appendChild(v); wrap.appendChild(r);
+            act.appendChild(wrap);
+          }
+          tr.appendChild(act);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.innerHTML = '';
+        container.appendChild(table);
+      })
+      .catch(function (err) { errorState(container, { message: err.message, onRetry: loadForms }); });
+  }
+
+  /* ---------- upload ---------- */
+  var uploadZone = document.getElementById('uploadZone');
+  var fileInput = document.getElementById('fileInput');
+  var uploadBtn = document.getElementById('uploadBtn');
+  var selectedFile = null;
+
+  uploadZone.addEventListener('click', function () { fileInput.click(); });
+  uploadZone.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', function () {
+    selectedFile = fileInput.files[0] || null;
+    uploadBtn.disabled = !selectedFile;
+    if (selectedFile) uploadZone.querySelector('p').textContent = selectedFile.name;
+  });
+
+  uploadBtn.addEventListener('click', function () {
+    if (!selectedFile) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Uploading…';
+    var fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('form_type', document.getElementById('formType').value);
+    fd.append('student_id', document.getElementById('formStudent').value);
+    apiFetch('/api/forms', { method: 'POST', body: fd })
+      .then(function (r) {
+        var box = document.getElementById('uploadResult');
+        box.innerHTML = '';
+        box.appendChild(h('p', 'mono', 'Uploaded — record #' + r.form.id + ' queued for review.'));
+        uploadBtn.textContent = 'Upload form';
+        fileInput.value = '';
+        selectedFile = null;
+        uploadZone.querySelector('p').textContent = 'Drop an image or PDF here, or click to browse';
+        loadForms();
+        loadOverview();
+      })
+      .catch(function (err) {
+        uploadBtn.textContent = 'Upload form';
+        uploadBtn.disabled = false;
+        errorTop('Upload failed: ' + err.message);
+      });
+  });
+
+  /* ---------- in-page "go to tab" anchors ---------- */
+  // Links like #forms-tab / #notifications-tab switch the active tab
+  // instead of doing nothing (the panels are JS-driven, not hash-anchored).
+  window.addEventListener('hashchange', onHash);
+  function onHash() {
+    var h = window.location.hash;
+    if (h === '#forms-tab') switchTab('forms');
+    else if (h === '#notifications-tab') switchTab('notifications');
+  }
+  if (window.location.hash) onHash();
+
+  /* ---------- boot ---------- */
+  loadOverview();
+})();
+</script>
+</body>
+</html>
