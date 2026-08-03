@@ -4,8 +4,9 @@ const path = require('path');
 const express = require('express');
 const { openDb } = require('./src/db');
 const { migrate } = require('./db/migrate');
-const { requireAuth, getSession } = require('./src/auth');
+const { requireAuth, getSession, hashPassword } = require('./src/auth');
 const { runScan } = require('./src/notification-service');
+const { seedIfEmpty } = require('./db/seeds/dev-seed');
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -18,8 +19,10 @@ app.use((req, res, next) => { req.db = db; next(); });
 app.disable('x-powered-by');
 app.use(express.json());
 
-// Ensure the uploads directory exists before multer writes there.
-fs.mkdirSync(path.join(__dirname, 'public', 'uploads'), { recursive: true });
+// Uploads directory is configurable so it can live on a persistent disk in
+// production (e.g. /var/data/uploads). Defaults to public/uploads.
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'public', 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 /* ------------------------------------------------------------------
    Dashboard guard MUST run before express.static, otherwise the
@@ -30,8 +33,10 @@ app.use('/dashboard.html', (req, res, next) => {
   next();
 });
 
-// Static frontend + uploaded files.
+// Static frontend + uploaded files. When UPLOADS_DIR lives outside public/
+// (persistent disk), this route keeps /uploads/* URLs working.
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 /* ------------------------------------------------------------------
    Public API (read-only previews so the marketing page can show real,
@@ -102,6 +107,44 @@ setInterval(scheduledScan, SCAN_INTERVAL_MS);
 
 // Apply schema on boot (idempotent) before listening.
 migrate(db);
+
+/* ------------------------------------------------------------------
+   First-boot provisioning (production-safe):
+   - SEED_DEMO_ON_BOOT=true → seed demo data only when the DB is empty
+     (ephemeral hosts like Render's free tier wipe the file on restart,
+     so this makes the app self-heal back to a demo state).
+   - SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD → REQUIRED when provisioning.
+     There is no hardcoded default — a known default password committed to
+     the repo would be a security hole. If they're missing, the app refuses
+     to boot rather than silently seeding a well-known admin account. Set
+     the real values in the host's environment (Render dashboard → Settings
+     → Environment).
+   ------------------------------------------------------------------ */
+const ADMIN_EMAIL = String(process.env.SEED_ADMIN_EMAIL || '').toLowerCase().trim();
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || '';
+const wantsSeed = process.env.SEED_DEMO_ON_BOOT === 'true';
+
+if (wantsSeed && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
+  throw new Error('[boot] SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD are required when SEED_DEMO_ON_BOOT=true. Set them in the Render dashboard → Settings → Environment and redeploy.');
+}
+if ((ADMIN_EMAIL && !ADMIN_PASSWORD) || (!ADMIN_EMAIL && ADMIN_PASSWORD)) {
+  throw new Error('[boot] SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set together.');
+}
+
+if (wantsSeed) {
+  if (seedIfEmpty(db)) console.log('[boot] empty database — demo data seeded');
+}
+if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+  const existing = db.prepare('SELECT id, password_hash FROM admins WHERE email = ?').get(ADMIN_EMAIL);
+  const hash = hashPassword(ADMIN_PASSWORD);
+  if (!existing) {
+    db.prepare('INSERT INTO admins (email, password_hash) VALUES (?, ?)').run(ADMIN_EMAIL, hash);
+    console.log(`[boot] admin account created from env: ${ADMIN_EMAIL}`);
+  } else if (existing.password_hash !== hash) {
+    db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, existing.id);
+    console.log(`[boot] admin password updated from env: ${ADMIN_EMAIL}`);
+  }
+}
 
 app.listen(PORT, () => {
   console.log('┌────────────────────────────────────────────────┐');

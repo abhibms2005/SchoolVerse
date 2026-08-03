@@ -1,0 +1,50 @@
+# Render Blueprint — one-click deploy of the full SchoolVerse app
+# (Express server + SQLite). Docs: https://render.com/docs/blueprint-spec
+#
+# ⚠️ FREE TIER IS EPHEMERAL: the SQLite file lives on a scratch disk that is
+# wiped on every restart / redeploy / spin-down (free services sleep after
+# ~15 min idle). SEED_DEMO_ON_BOOT=true below makes the app re-seed a fresh
+# demo database on each boot, so the site always "works" — but any data you
+# enter through the dashboard disappears when the service sleeps.
+#
+# For real persistence, switch to a paid instance type AND attach a disk:
+#   1. change  plan: free            →  plan: standard
+#   2. uncomment the `disk:` block below (mounts an SSD at /var/data)
+#   3. set DB_PATH=/var/data/schoolverse.db and UPLOADS_DIR=/var/data/uploads
+#      (values below already point there — they only persist if the disk is attached)
+# See README → "Deploying to Render" for the full walkthrough.
+
+services:
+  - type: web
+    name: schoolverse
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      # On a fresh DB, this seeds the demo data (8 rooms, 6 staff, 6 students,
+      # a 5-day timetable with seeded conflicts, attendance, forms + admin).
+      - key: SEED_DEMO_ON_BOOT
+        value: "true"
+      # Admin account — deliberately NO committed value. Render prompts you
+      # for these when you create the blueprint service (or set them later in
+      # Settings → Environment). The server refuses to boot/seeding without
+      # them, so the app can never fall back to a known default password.
+      - key: SEED_ADMIN_EMAIL
+      - key: SEED_ADMIN_PASSWORD
+      # Where the SQLite file + uploads live. Defaults keep the app in one
+      # directory; point them at /var/data/* when a persistent disk is attached.
+      - key: DB_PATH
+        value: /var/data/schoolverse.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+    # disk:
+    #   name: schoolverse-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

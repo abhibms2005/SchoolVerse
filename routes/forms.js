@@ -6,9 +6,13 @@ const { upsertNotification } = require('../src/notification-service');
 
 const router = express.Router();
 
+// Uploads land in UPLOADS_DIR (configurable for persistent disks in
+// production; defaults to public/uploads).
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'public', 'uploads');
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'public', 'uploads')),
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
     filename: (req, file, cb) => {
       const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       cb(null, `form-${Date.now()}-${safe}`);

@@ -17,6 +17,10 @@ npm run setup      # create the schema (idempotent) + load dev seed data
 npm start          # run the server → http://localhost:3000
 ```
 
+> `npm run setup` / `npm run db:seed` need `SEED_ADMIN_EMAIL` and
+> `SEED_ADMIN_PASSWORD` set (see below) — the repo contains no default admin
+> credentials.
+
 Then open:
 
 | URL | What it is |
@@ -27,12 +31,16 @@ Then open:
 
 ### Seeded admin account (local dev only)
 
-```
-email:    admin@schoolverse.local
-password: admin123
+The seed writes the admin account from environment variables — **no default
+credentials are committed**. When seeding (`npm run setup` / `npm run db:seed`)
+you must supply them:
+
+```bash
+SEED_ADMIN_EMAIL=admin@your-school.org SEED_ADMIN_PASSWORD='pick-a-strong-password' npm run setup
 ```
 
-Override with env vars when seeding: `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`.
+The server also refuses to boot with `SEED_DEMO_ON_BOOT=true` unless both
+variables are set.
 
 ---
 
@@ -71,7 +79,66 @@ The seed is strictly for local development/demo. It is separated from production
 | `PORT` | `3000` | HTTP port |
 | `DB_PATH` | `db/schoolverse.db` | SQLite file location |
 | `SESSION_SECRET` | local-dev default | HMAC secret for the signed session cookie — **set a real value when deploying** |
-| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | `admin@schoolverse.local` / `admin123` | Admin credentials written by the dev seed |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | *(required when seeding — no default)* | Admin credentials for the seeded account; the seed and `SEED_DEMO_ON_BOOT` boot provisioning refuse to run without them |
+| `SEED_DEMO_ON_BOOT` | *(unset)* | `true` → seed demo data on boot **only when the database is empty** (used for ephemeral hosting — see below) |
+| `UPLOADS_DIR` | `public/uploads` | Where uploaded form files are stored (point at a persistent disk in production) |
+
+---
+
+## Deploying to Render
+
+The whole app (landing page, dashboard, login, uploads) is an Express + SQLite
+server — it must run on a host that executes Node, **not** a static file host
+(Netlify etc. can only serve the frontend, which is why the live sections 404
+there). The repo ships a [`render.yaml`](render.yaml) blueprint for one-click
+deployment.
+
+### Deploy steps
+
+1. Push this repo to GitHub (already done — `origin` → `github.com/abhibms2005/schoolai`).
+2. Sign up at [render.com](https://render.com) → **New → Blueprint**.
+3. Connect the GitHub repo. Render reads `render.yaml` and creates the web service automatically.
+4. First deploy builds, then boots the server. Watch the logs for `SchoolVerse running at http://…`.
+5. During blueprint creation Render prompts you for `SEED_ADMIN_EMAIL` and
+   `SEED_ADMIN_PASSWORD` — they're deliberately left out of `render.yaml` (no
+   default credentials are committed, and the server refuses to boot without
+   them). You can change them later in the Render dashboard → Settings →
+   Environment.
+6. Open the service URL and sign in with the credentials you provided.
+
+### ⚠️ Free tier wipes your SQLite data — read this before choosing
+
+**Confirmed from Render's docs:** free-instance web services have an
+*ephemeral filesystem* — "any changes to your web service's filesystem
+(uploaded images, local SQLite databases, etc.) are lost every time the service
+redeploys, restarts, or spins down." Free services also **spin down after ~15
+minutes of inactivity** (and wake on the next request), and *"persistent disks
+… can preserve local filesystem changes, but Free web services cannot."*
+
+What that means in practice:
+
+| | Free tier | Paid instance + disk |
+|---|---|---|
+| Cost | $0 | ~$7–25/mo instance (see [pricing](https://render.com/pricing)) + disk (~$0.25/GB/mo, min 1 GB) |
+| Data survives restarts/redeploys | ❌ **No — wiped every restart, redeploy and spin-down** | ✅ Yes |
+| Dashboard / login / uploads | Work, but **reset to demo state** after ~15 min idle | Fully persistent |
+| Demo data | Auto re-seeded on boot (`SEED_DEMO_ON_BOOT=true`) | Seeded once, then keeps what you enter |
+
+**For a hackathon demo:** the free tier is acceptable *if* you're OK with the
+app resetting to the demo state whenever it idles out — the site always looks
+alive because `SEED_DEMO_ON_BOOT` re-seeds a fresh demo DB on boot, and your
+admin login still works. Anything you type into the dashboard (uploaded forms,
+resolved notifications, timetable edits) is lost when the service sleeps.
+
+**For real persistence:** pick a paid instance type and attach a disk. In
+`render.yaml` change `plan: free` → `plan: standard`, uncomment the `disk:`
+block, and keep `DB_PATH=/var/data/schoolverse.db` + `UPLOADS_DIR=/var/data/uploads`
+(they're already set — they only persist once the disk is mounted at `/var/data`).
+Then your data survives restarts, redeploys and idle spin-down.
+
+> Note: SQLite + WAL works fine on Render's attached SSDs. Backups are on you
+> (Render snapshots the disk daily, but for a real deployment consider `VACUUM
+> INTO` dumps or a cron `sqlite3 .backup`).
 
 ---
 
