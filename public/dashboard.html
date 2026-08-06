@@ -870,7 +870,7 @@
 
   /* ---------- data hub (roster CRUD) ---------- */
   var HUB_COLS = {
-    students: [['name', 'Name'], ['class', 'Class'], ['guardian_contact', 'Guardian']],
+    students: [['name', 'Name'], ['class', 'Class'], ['fee_status', 'Fees'], ['guardian_contact', 'Guardian']],
     staff: [['name', 'Name'], ['subject', 'Subject'], ['contact', 'Contact']],
     rooms: [['name', 'Name'], ['room_type', 'Type'], ['capacity', 'Capacity']],
   };
@@ -880,6 +880,7 @@
       { key: 'class', label: 'Class', type: 'text', required: true },
       { key: 'section', label: 'Section', type: 'text' },
       { key: 'guardian_contact', label: 'Guardian contact', type: 'text' },
+      { key: 'fee_status', label: 'Fee status', type: 'select', options: [['paid', 'Paid'], ['pending', 'Pending'], ['overdue', 'Overdue']] },
     ],
     staff: [
       { key: 'name', label: 'Name', type: 'text', required: true },
@@ -947,6 +948,13 @@
       var tr = h('tr');
       if (r.status === 'inactive') tr.classList.add('row-inactive');
       HUB_COLS[entity].forEach(function (c) {
+        if (c[0] === 'fee_status') {
+          var feeTd = h('td', '');
+          var feeBadge = h('span', 'badge ' + (r.fee_status === 'paid' ? 'badge--ok' : r.fee_status === 'overdue' ? 'badge--urgent' : 'badge--warning'), r.fee_status || '—');
+          feeTd.appendChild(feeBadge);
+          tr.appendChild(feeTd);
+          return;
+        }
         var td = h('td', c[0] === 'capacity' || c[0] === 'room_type' ? 'num' : '', r[c[0]] == null ? '—' : String(r[c[0]]));
         tr.appendChild(td);
       });
@@ -1021,6 +1029,7 @@
       input.required = !!f.required;
       if (row) input.value = row[f.key] == null ? '' : String(row[f.key]);
       else if (f.key === 'room_type') input.value = 'classroom';
+      else if (f.key === 'fee_status') input.value = 'pending';
       var label = h('label', '', f.label + (f.required ? ' *' : ''));
       label.htmlFor = input.id;
       field.appendChild(label);

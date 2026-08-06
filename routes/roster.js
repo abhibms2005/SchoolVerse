@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const { runScan } = require('../src/notification-service');
 
 const router = express.Router();
 
@@ -36,6 +37,7 @@ function validPositiveInt(v) {
 
 const STUDENT_STATUSES = ['active', 'inactive', 'left'];
 const STAFF_ROOM_STATUSES = ['active', 'inactive'];
+const FEE_STATUSES = ['paid', 'pending', 'overdue'];
 
 /* ================= students ================= */
 
@@ -43,24 +45,30 @@ const STAFF_ROOM_STATUSES = ['active', 'inactive'];
 router.get('/students', (req, res) => {
   const where = activeWhere(req);
   const rows = req.db.prepare(
-    `SELECT id, name, class, section, guardian_contact, admission_date, status
+    `SELECT id, name, class, section, guardian_contact, admission_date, fee_status, status
        FROM students ${where ? 'WHERE ' + where : ''} ORDER BY name LIMIT 200`
   ).all();
   res.json({ students: rows });
 });
 
-// POST /api/roster/students { name, class, section?, guardian_contact?, status? }
+// POST /api/roster/students { name, class, section?, guardian_contact?, fee_status?, status? }
 router.post('/students', (req, res) => {
-  const { name, class: cls, section, guardian_contact, status } = req.body || {};
+  const { name, class: cls, section, guardian_contact, fee_status, status } = req.body || {};
   const err = nonEmpty(name, 'name') || nonEmpty(cls, 'class');
   if (err) return res.status(400).json({ error: err });
   if (status !== undefined && !STUDENT_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STUDENT_STATUSES.join(', ')}` });
   }
+  if (fee_status !== undefined && !FEE_STATUSES.includes(fee_status)) {
+    return res.status(400).json({ error: `fee_status must be one of: ${FEE_STATUSES.join(', ')}` });
+  }
   const info = req.db.prepare(
-    `INSERT INTO students (name, class, section, guardian_contact, status)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(name.trim(), cls.trim(), section || '', guardian_contact || null, status || 'active');
+    `INSERT INTO students (name, class, section, guardian_contact, fee_status, status)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(name.trim(), cls.trim(), section || '', guardian_contact || null, fee_status || 'pending', status || 'active');
+  // An overdue student added mid-demo should flag immediately, not on the
+  // next 60s background scan.
+  runScan(req.db);
   const row = req.db.prepare(`SELECT * FROM students WHERE id = ?`).get(info.lastInsertRowid);
   res.status(201).json({ ok: true, student: row });
 });
@@ -71,7 +79,7 @@ router.patch('/students/:id', (req, res) => {
   const existing = req.db.prepare(`SELECT * FROM students WHERE id = ?`).get(id);
   if (!existing) return res.status(404).json({ error: 'student not found' });
 
-  const { name, class: cls, section, guardian_contact, status } = req.body || {};
+  const { name, class: cls, section, guardian_contact, fee_status, status } = req.body || {};
   if (name !== undefined && nonEmpty(name, 'name')) return res.status(400).json({ error: nonEmpty(name, 'name') });
   if (cls !== undefined && nonEmpty(cls, 'class')) return res.status(400).json({ error: nonEmpty(cls, 'class') });
   if (section !== undefined && optString(section)) return res.status(400).json({ error: 'section ' + optString(section) });
@@ -79,15 +87,22 @@ router.patch('/students/:id', (req, res) => {
   if (status !== undefined && !STUDENT_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STUDENT_STATUSES.join(', ')}` });
   }
+  if (fee_status !== undefined && !FEE_STATUSES.includes(fee_status)) {
+    return res.status(400).json({ error: `fee_status must be one of: ${FEE_STATUSES.join(', ')}` });
+  }
   req.db.prepare(
     `UPDATE students SET
        name = COALESCE(?, name), class = COALESCE(?, class),
        section = COALESCE(?, section), guardian_contact = COALESCE(?, guardian_contact),
-       status = COALESCE(?, status)
+       fee_status = COALESCE(?, fee_status), status = COALESCE(?, status)
      WHERE id = ?`
   ).run(name === undefined ? null : name.trim(), cls === undefined ? null : cls.trim(),
         section === undefined ? null : section, guardian_contact === undefined ? null : guardian_contact,
+        fee_status === undefined ? null : fee_status,
         status === undefined ? null : status, id);
+  // Reconcile fee notifications right away: paying a fee clears its
+  // fee_overdue row immediately (and marking overdue creates it).
+  runScan(req.db);
   const row = req.db.prepare(`SELECT * FROM students WHERE id = ?`).get(id);
   res.json({ ok: true, student: row });
 });
@@ -100,6 +115,9 @@ router.delete('/students/:id', (req, res) => {
   const existing = req.db.prepare(`SELECT id FROM students WHERE id = ?`).get(id);
   if (!existing) return res.status(404).json({ error: 'student not found' });
   req.db.prepare(`UPDATE students SET status = 'inactive' WHERE id = ?`).run(id);
+  // A soft-deleted student is no longer 'active + overdue', so any open
+  // fee_overdue notification resolves.
+  runScan(req.db);
   const row = req.db.prepare(`SELECT * FROM students WHERE id = ?`).get(id);
   res.json({ ok: true, student: row });
 });

@@ -179,3 +179,85 @@ test('room validation: bad capacity/type → 400, duplicate name → 409', async
   res = await patch(base, `${ROSTER}/rooms/999`, { capacity: 10 });
   assert.equal(res.status, 404);
 });
+
+/* ================= students: fee status ================= */
+
+test('student fee_status: create, edit, list, and validation', async (t) => {
+  const { db, base, close } = await mountRouter(require('../routes/roster'), ROSTER);
+  t.after(close);
+
+  // Create with an explicit fee status.
+  let res = await post(base, `${ROSTER}/students`, { name: 'Zoya Khan', class: '10A', fee_status: 'overdue' });
+  assert.equal(res.status, 201);
+  let { student } = await res.json();
+  assert.equal(student.fee_status, 'overdue');
+
+  // New students default to 'pending' when omitted.
+  res = await post(base, `${ROSTER}/students`, { name: 'Aarav Sharma', class: '9B' });
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).student.fee_status, 'pending');
+
+  // Edit it via PATCH.
+  res = await patch(base, `${ROSTER}/students/${student.id}`, { fee_status: 'paid' });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).student.fee_status, 'paid');
+
+  // The list carries it (the hub badge column reads it).
+  res = await fetch(`${base}${ROSTER}/students`);
+  const listed = (await res.json()).students.find((s) => s.id === student.id);
+  assert.equal(listed.fee_status, 'paid');
+
+  // Invalid values are rejected cleanly.
+  res = await post(base, `${ROSTER}/students`, { name: 'X', class: '9A', fee_status: 'half-paid' });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /fee_status/);
+  res = await patch(base, `${ROSTER}/students/${student.id}`, { fee_status: 'half-paid' });
+  assert.equal(res.status, 400);
+});
+
+test('overdue students surface a fee notification that auto-resolves when paid', async (t) => {
+  const { db, base, close } = await mountRouter(require('../routes/roster'), ROSTER);
+  t.after(close);
+  const { runScan } = require('../src/notification-service');
+
+  let res = await post(base, `${ROSTER}/students`, { name: 'Zoya Khan', class: '10A', fee_status: 'overdue' });
+  const { student } = await res.json();
+
+  // The POST itself triggers a scan → the notification exists immediately.
+  const notif = db.prepare(`SELECT * FROM notifications WHERE fingerprint = ?`).get(`fee_overdue_${student.id}`);
+  assert.ok(notif, 'fee_overdue notification was generated');
+  assert.equal(notif.type, 'fee_overdue');
+  assert.equal(notif.resolved, 0);
+
+  // Paying the fee resolves it (PATCH triggers a scan too).
+  res = await patch(base, `${ROSTER}/students/${student.id}`, { fee_status: 'paid' });
+  assert.equal(res.status, 200);
+  const after = db.prepare(`SELECT resolved FROM notifications WHERE fingerprint = ?`).get(`fee_overdue_${student.id}`);
+  assert.equal(after.resolved, 1, 'fee notification resolved once the student is paid');
+
+  // Re-marking overdue re-opens it, and a soft-deleted student stops flagging.
+  await patch(base, `${ROSTER}/students/${student.id}`, { fee_status: 'overdue' });
+  assert.equal(db.prepare(`SELECT resolved FROM notifications WHERE fingerprint = ?`).get(`fee_overdue_${student.id}`).resolved, 0);
+  await del(base, `${ROSTER}/students/${student.id}`);
+  runScan(db);
+  assert.equal(db.prepare(`SELECT resolved FROM notifications WHERE fingerprint = ?`).get(`fee_overdue_${student.id}`).resolved, 1, 'inactive students no longer flag fees');
+});
+
+test('admin-resolved notifications are NOT force-reopened by a scan while the issue persists', async (t) => {
+  const { db, base, close } = await mountRouter(require('../routes/roster'), ROSTER);
+  t.after(close);
+  const { runScan } = require('../src/notification-service');
+
+  // A staffing gap (timetable slot with no teacher) generates a notification.
+  db.prepare(`INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section)
+              VALUES (0, 1, 'Maths', NULL, NULL, '9A')`).run();
+  runScan(db);
+  const notif = db.prepare(`SELECT * FROM notifications WHERE type = 'staffing_gap'`).get();
+  assert.ok(notif && notif.resolved === 0);
+
+  // Admin clicks "Mark resolved" — the next scan must leave it resolved even
+  // though the gap still exists (dismissal is meaningful for non-fee types).
+  db.prepare(`UPDATE notifications SET resolved = 1 WHERE id = ?`).run(notif.id);
+  runScan(db);
+  assert.equal(db.prepare(`SELECT resolved FROM notifications WHERE id = ?`).get(notif.id).resolved, 1, 'dismissed notification stays resolved');
+});

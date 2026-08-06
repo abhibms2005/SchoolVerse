@@ -49,18 +49,21 @@ function seedDemo(db) {
     .run(name, subject, 'not listed').lastInsertRowid);
   const [IYER, DAS, MEHTA, RAO, SHARMA, NAIR] = staff;
 
-  /* ---------- students ---------- */
+  /* ---------- students ----------
+     fee_status per student: Rohan is 'overdue' (his seeded fee receipt is
+     still pending verification — a live demo hook: verify the receipt and
+     set his fees to paid), everyone else paid/pending. */
   const students = [
-    ['Aarav Sharma', '9B',  'A', '+91 98100 11111'],
-    ['Diya Kapoor',  '10A', 'A', '+91 98100 22222'],
-    ['Rohan Verma',  '10B', 'B', '+91 98100 33333'],
-    ['Isha Patel',   '9A',  'A', '+91 98100 44444'],
-    ['Kabir Singh',  '10A', 'B', '+91 98100 55555'],
-    ['Meera Iyer',   '9B',  'B', '+91 98100 66666'],
-  ].map(([name, cls, section, contact]) => db.prepare(
-    `INSERT INTO students (name, class, section, guardian_contact, admission_date, status)
-     VALUES (?, ?, ?, ?, date('now', '-3 months'), 'active')`)
-    .run(name, cls, section, contact).lastInsertRowid);
+    ['Aarav Sharma', '9B',  'A', '+91 98100 11111', 'pending'],
+    ['Diya Kapoor',  '10A', 'A', '+91 98100 22222', 'paid'],
+    ['Rohan Verma',  '10B', 'B', '+91 98100 33333', 'overdue'],
+    ['Isha Patel',   '9A',  'A', '+91 98100 44444', 'paid'],
+    ['Kabir Singh',  '10A', 'B', '+91 98100 55555', 'pending'],
+    ['Meera Iyer',   '9B',  'B', '+91 98100 66666', 'paid'],
+  ].map(([name, cls, section, contact, fee_status]) => db.prepare(
+    `INSERT INTO students (name, class, section, guardian_contact, admission_date, fee_status, status)
+     VALUES (?, ?, ?, ?, date('now', '-3 months'), ?, 'active')`)
+    .run(name, cls, section, contact, fee_status).lastInsertRowid);
 
   /* ---------- timetable slots ----------
      Day: 0=Mon … 4=Fri. Periods 1..6.

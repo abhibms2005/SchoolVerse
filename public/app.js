@@ -96,12 +96,14 @@ const NOTIF_META = {
   clash:         { cls: 'urgent', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>' },
   pending_review: { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>' },
   staffing_gap:  { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
+  fee_overdue:   { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>' },
 };
 
 const NOTIF_TAG = {
   clash: 'Urgent',
   pending_review: 'Needs review',
   staffing_gap: 'Staffing gap',
+  fee_overdue: 'Fee overdue',
 };
 
 function notifIcon(n) { return (NOTIF_META[n.type] || NOTIF_META.pending_review).icon; }
@@ -150,6 +152,7 @@ function buildNotifCard(n, onResolve) {
 function notifDetail(n) {
   if (n.type === 'clash') return 'Two classes need the same teacher or room at the same period.';
   if (n.type === 'staffing_gap') return 'A class has no teacher assigned for this slot.';
+  if (n.type === 'fee_overdue') return 'A student\u2019s fees are flagged as overdue — update their fee status when settled.';
   return 'A digitised form is waiting for your sign-off.';
 }
 

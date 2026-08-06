@@ -4,6 +4,9 @@
 const { scanAllConflicts } = require('./conflict-detector');
 
 function upsertNotification(db, { type, message, severity, fingerprint }) {
+  // INSERT OR IGNORE: a notification is created once. Resolving it — either
+  // automatically (issue fixed) or by the admin's "Mark resolved" button —
+  // must stick; the next scan must NOT force-reopen a dismissed row.
   db.prepare(
     `INSERT OR IGNORE INTO notifications (type, message, severity, resolved, fingerprint)
      VALUES (?, ?, ?, 0, ?)`
@@ -52,6 +55,31 @@ function notifyPendingForms(db) {
         fingerprint: `low_conf_form_${form.id}`,
       });
     }
+  }
+}
+
+function notifyOverdueFees(db) {
+  const overdue = db.prepare(
+    `SELECT id, name, class FROM students WHERE status = 'active' AND fee_status = 'overdue'`
+  ).all();
+  // Fees are the one notification whose lifecycle is a true state machine
+  // (overdue → paid → overdue again), so re-opening is wanted here even for
+  // rows that were resolved earlier. Scoped to fee rows only — the generic
+  // upsert stays INSERT OR IGNORE so "Mark resolved" sticks for other types.
+  db.prepare(
+    `UPDATE notifications SET resolved = 0
+      WHERE type = 'fee_overdue' AND resolved = 1
+        AND fingerprint IN (
+          SELECT 'fee_overdue_' || id FROM students WHERE status = 'active' AND fee_status = 'overdue'
+        )`
+  ).run();
+  for (const s of overdue) {
+    upsertNotification(db, {
+      type: 'fee_overdue',
+      message: `Fee overdue: ${s.name} (${s.class}) — fees flagged as overdue`,
+      severity: 'warning',
+      fingerprint: `fee_overdue_${s.id}`,
+    });
   }
 }
 
@@ -128,6 +156,14 @@ function resolveResolvedIssues(db) {
             FROM uploaded_forms WHERE status != 'pending_review'
         )`
   ).run();
+  db.prepare(
+    `UPDATE notifications SET resolved = 1
+      WHERE type = 'fee_overdue' AND resolved = 0
+        AND fingerprint IN (
+          SELECT 'fee_overdue_' || id
+            FROM students WHERE NOT (status = 'active' AND fee_status = 'overdue')
+        )`
+  ).run();
 }
 
 /**
@@ -138,6 +174,7 @@ function runScan(db) {
   const flagged = scanAllConflicts(db);
   notifyClashes(db, flagged);
   notifyPendingForms(db);
+  notifyOverdueFees(db);
   notifyStaffingGaps(db);
   resolveResolvedIssues(db);
   // Record the scan time for /api/status (meta table is part of the schema).

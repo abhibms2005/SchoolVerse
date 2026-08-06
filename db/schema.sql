@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS students (
   section          TEXT NOT NULL DEFAULT '',
   guardian_contact TEXT,
   admission_date   TEXT NOT NULL DEFAULT (date('now')),
+  fee_status       TEXT NOT NULL DEFAULT 'pending'
+    CHECK (fee_status IN ('paid', 'pending', 'overdue')),
   status           TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'inactive', 'left'))
 );
@@ -116,7 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_forms_status ON uploaded_forms (status);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  type        TEXT NOT NULL CHECK (type IN ('clash', 'pending_review', 'staffing_gap')),
+  type        TEXT NOT NULL CHECK (type IN ('clash', 'pending_review', 'staffing_gap', 'fee_overdue')),
   message     TEXT NOT NULL,
   severity    TEXT NOT NULL DEFAULT 'warning'
     CHECK (severity IN ('urgent', 'warning', 'ok')),

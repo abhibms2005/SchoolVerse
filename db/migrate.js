@@ -17,6 +17,9 @@ const ADD_COLUMNS = [
   // references intact).
   ['staff', 'status', "TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive'))"],
   ['rooms', 'status', "TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive'))"],
+  // Fee tracking on students (one field, not a payments system): paid /
+  // pending / overdue. Overdue students surface as notifications.
+  ['students', 'fee_status', "TEXT NOT NULL DEFAULT 'pending' CHECK (fee_status IN ('paid','pending','overdue'))"],
 ];
 
 function ensureColumns(db) {
@@ -29,10 +32,37 @@ function ensureColumns(db) {
   }
 }
 
+// The notifications.type CHECK gained a new value ('fee_overdue'). SQLite
+// cannot ALTER a CHECK constraint, so when an older table definition is
+// present we rebuild the table in place — rows, ids and the fingerprint
+// unique index all carry over, so no data is lost.
+function rebuildNotificationsTable(db) {
+  const ddl = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'`).get();
+  if (!ddl || /fee_overdue/.test(ddl.sql)) return; // already current (or table not yet created)
+  db.exec(`
+    CREATE TABLE notifications_new (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      type        TEXT NOT NULL CHECK (type IN ('clash', 'pending_review', 'staffing_gap', 'fee_overdue')),
+      message     TEXT NOT NULL,
+      severity    TEXT NOT NULL DEFAULT 'warning'
+        CHECK (severity IN ('urgent', 'warning', 'ok')),
+      resolved    INTEGER NOT NULL DEFAULT 0,
+      fingerprint TEXT NOT NULL UNIQUE,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO notifications_new (id, type, message, severity, resolved, fingerprint, created_at)
+      SELECT id, type, message, severity, resolved, fingerprint, created_at FROM notifications;
+    DROP TABLE notifications;
+    ALTER TABLE notifications_new RENAME TO notifications;
+  `);
+  console.log('[migrate] rebuilt notifications table (fee_overdue type added)');
+}
+
 function migrate(db) {
   const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(sql);
   ensureColumns(db);
+  rebuildNotificationsTable(db);
 }
 
 if (require.main === module) {
