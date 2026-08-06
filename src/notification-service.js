@@ -44,6 +44,9 @@ function notifyPendingForms(db) {
     // both for the same form would look like a duplicate in the queue.
     const lowConfidence = form.extraction_status === 'done' && extracted
       && (Number(extracted.confidence) < 0.6 || extracted.needs_human_review === true);
+    // student_id rides along so teacher-scoped views (Day 1–2) surface the
+    // SAME rows the admin sees — including the low-confidence reason — instead
+    // of re-synthesising a generic message from the forms table.
     if (lowConfidence) {
       const pct = Math.round((Number(extracted.confidence) || 0) * 100);
       upsertNotification(db, {
@@ -51,6 +54,7 @@ function notifyPendingForms(db) {
         message: `${form.form_type} form for ${form.student_name || `student #${form.student_id || '?'}`} needs manual review — low OCR confidence (${pct}%)`,
         severity: 'warning',
         fingerprint: `low_conf_form_${form.id}`,
+        student_id: form.student_id,
       });
       continue;
     }
@@ -59,6 +63,7 @@ function notifyPendingForms(db) {
       message: `${form.form_type} form for ${form.student_name || `student #${form.student_id || '?'}`} awaits review`,
       severity: 'warning',
       fingerprint: `pending_form_${form.id}`,
+      student_id: form.student_id,
     });
   }
 }

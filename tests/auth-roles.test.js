@@ -178,6 +178,32 @@ test('teacher notifications include only their students’ items', async () => {
   } finally { await h.close(); }
 });
 
+test('teacher sees the real low-confidence review reason, not a generic synthesized message', async () => {
+  const h = await mountRouter(teacherRouter, '/api/teacher', { email: 'a@school', role: 'teacher', staff_id: 1 });
+  try {
+    const { s1 } = seedTeacherWorld(h.db);
+    // The notification service writes a low-conf row WITH student_id; the
+    // teacher's queue must surface that exact row (message + reason).
+    const formId = h.db.prepare(
+      `INSERT INTO uploaded_forms (student_id, form_type, file_path, extracted_data, extraction_status, extraction_confidence, status)
+       VALUES (?, 'medical', 'uploads/x.pdf', ?, 'done', 0.55, 'pending_review')`
+    ).run(s1, JSON.stringify({ form_type: 'medical', confidence: 0.55, needs_human_review: true })).lastInsertRowid;
+    // Fingerprint is built in JS (like upsertNotification does) — SQL `||`
+    // would render the number as '1.0' and break the dedupe regex.
+    h.db.prepare(
+      `INSERT INTO notifications (type, message, severity, resolved, fingerprint, student_id)
+       VALUES ('pending_review', 'medical form for S1 needs manual review — low OCR confidence (55%)', 'warning', 0, ?, ?)`
+    ).run(`low_conf_form_${formId}`, s1);
+    const res = await fetch(`${h.base}/api/teacher/notifications`);
+    assert.equal(res.status, 200);
+    const items = (await res.json()).notifications;
+    const lowConf = items.find((n) => /medical form for S1/.test(n.message));
+    assert.ok(lowConf, 'the low-confidence form appears for the teacher');
+    assert.match(lowConf.message, /low OCR confidence \(55%\)/);
+    assert.ok(!items.some((n) => /medical form for S1 awaits review/.test(n.message)), 'no duplicate generic row when the real one exists');
+  } finally { await h.close(); }
+});
+
 // Login must use the router's own db, so build a tiny server around authRouter
 // with our seeded db instead of mountRouter's fresh one.
 test('login issues a role-carrying session cookie', async () => {

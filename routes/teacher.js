@@ -126,6 +126,8 @@ router.get('/notifications', (req, res) => {
   const out = [];
   if (studentIds.length) {
     const idPlaceholders = studentIds.map(() => '?').join(', ');
+    // Real notification rows first — these carry the exact message the admin
+    // queue shows (e.g. the low-OCR-confidence reason for a pending form).
     const notifs = req.db.prepare(`
       SELECT n.type, n.message, n.severity, n.created_at, s.name AS student_name, s.class
         FROM notifications n
@@ -133,16 +135,28 @@ router.get('/notifications', (req, res) => {
        WHERE n.resolved = 0 AND n.student_id IN (${idPlaceholders})
        ORDER BY n.created_at DESC LIMIT 30`).all(...studentIds);
     out.push(...notifs);
-  }
 
-  const forms = req.db.prepare(`
-    SELECT f.form_type, f.status, f.uploaded_at, s.name AS student_name, s.class
-      FROM uploaded_forms f
-      JOIN students s ON s.id = f.student_id
-     WHERE f.status = 'pending_review' AND s.status = 'active' AND s.class IN (${placeholders})
-     ORDER BY f.uploaded_at DESC LIMIT 20`).all(...scope.classes);
-  for (const f of forms) {
-    out.push({ type: 'pending_review', message: `${f.form_type} form for ${f.student_name} awaits review`, severity: 'warning', created_at: f.uploaded_at, student_name: f.student_name, class: f.class });
+    // Fallback: pending forms whose notification hasn't been generated yet
+    // (uploaded since the last scan). These appear with the same generic
+    // message the admin queue shows until the next scan surfaces them
+    // properly. Never fabricated — always a real pending_review row.
+    const seenFormIds = req.db.prepare(`
+      SELECT fingerprint FROM notifications WHERE type = 'pending_review' AND resolved = 0
+    `).all().map((r) => {
+      const m = /(?:pending_form|low_conf_form)_(\d+)$/.exec(r.fingerprint);
+      return m ? Number(m[1]) : -1;
+    }).filter((id) => id > 0);
+    const exclude = seenFormIds.length ? `AND f.id NOT IN (${seenFormIds.map(() => '?').join(', ')})` : '';
+    const forms = req.db.prepare(`
+      SELECT f.id, f.form_type, f.uploaded_at, s.name AS student_name, s.class
+        FROM uploaded_forms f
+        JOIN students s ON s.id = f.student_id
+       WHERE f.status = 'pending_review' AND s.status = 'active' AND s.class IN (${placeholders})
+         ${exclude}
+       ORDER BY f.uploaded_at DESC LIMIT 20`).all(...scope.classes, ...seenFormIds);
+    for (const f of forms) {
+      out.push({ type: 'pending_review', message: `${f.form_type} form for ${f.student_name} awaits review`, severity: 'warning', created_at: f.uploaded_at, student_name: f.student_name, class: f.class });
+    }
   }
 
   out.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
