@@ -2,7 +2,7 @@
 
 An AI-powered school operations platform — paperwork in, system out. Express + SQLite backend, vanilla HTML/CSS/JS frontend (no build step), single-admin auth.
 
-**Landing page** (public, shows real read-only data): `/`
+**Landing page** (public, shows real read-only data; the product section's four feature cards fly in from the viewport corners with a scroll-linked 3D entrance that reverses on scroll-up and respects `prefers-reduced-motion`): `/`
 **Dashboard app** (sign-in required): `/dashboard.html`
 
 ---
@@ -85,6 +85,7 @@ The seed is strictly for local development/demo. It is separated from production
 | `UPLOADS_DIR` | `public/uploads` | Where uploaded form files are stored (point at a persistent disk in production) |
 | `GEMINI_API_KEY` | *(unset)* | Free Google AI Studio key for real document extraction (Task: *Document reader*). Without it, uploads still work — extraction is recorded as `failed` and the form lands in the review queue for manual entry, never a crash. Get one at aistudio.google.com/apikey (`AIza…` format) |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Gemini model used for document extraction (override per deployment; no code change needed). Defaults to the current stable Flash — older Flash models (e.g. `gemini-2.5-flash`) are restricted for new accounts |
+| `BASE_URL` / `SCAN_INTERVAL_MS` / `SCAN_METHOD` | `http://localhost:3000` / `4000` / *(unset)* | For `npm run scan:simulate` only — where the app is, milliseconds between simulated scans, and an optional method override (`rfid`/`cv`/`manual`; unset = weighted rotation) |
 
 ---
 
@@ -176,10 +177,14 @@ public/
 tests/
   conflict-detector.test.js  Conflict detection (staff/room double-booking, resolution)
   document-extractor.test.js Real extraction parse/fallback paths (mocked model client)
-  forms.test.js              Upload/verify flow incl. corrected-data merge
+  forms.test.js              Upload/verify flow incl. corrected-data merge + retry-extract
   timetable-generator.test.js Generation constraints + conflict-detector cross-check
+  timetable-routes.test.js   Slot add/edit/delete endpoints + rescan flow
   attendance-scan.test.js    Scan ingestion validation + live-feed source
+  roster.test.js             Roster CRUD + fee_status + overdue-fee notification lifecycle
   staffing-predictor.test.js Absence-heuristic + structural-gap predictions
+  create-store.test.js       The dashboard's observable store (set/subscribe/unsubscribe)
+  helpers.js                 Shared harness (in-memory DB, real-HTTP route mounting)
 ```
 
 ### API overview
@@ -225,7 +230,7 @@ tests/
 - **Timetable generator** — `src/timetable-generator.js` is a dependency-free constraint-satisfaction solver (greedy MRV ordering + bounded backtracking) over real input tables: `classes`, `subjects`, `class_subject_requirements` (periods/week + lab vs classroom), `staff_subjects` (qualifications + weekly load caps), and `rooms.room_type`. It can't double-book a teacher, room, or class; anything it genuinely can't place is returned as an **unresolved requirement** and surfaced as a staffing-gap notification. After writing the grid it re-runs the real conflict detector as a belt-and-braces check (zero conflicts by construction, proven at runtime). Manual editing still works afterwards: every timetable cell in the dashboard has an **Edit** control (modal for subject / class / teacher / room / day / period), a **Delete slot** action, and an **Add slot** button — all wired to `POST/PATCH/DELETE /api/timetable/slots*`, each change triggering the same rescan-and-resolve flow as the generator's output.
 - **Auto-attendance** — `POST /api/attendance/scan` writes a real attendance row for `{student_id, method: rfid|cv|manual, room_id?, timestamp?}` with full validation (unknown student/room rejected, method normalised to the schema values). The scan is **idempotent**: a student is marked present at most once per calendar day, so RFID double-reads and rapid clicks return the existing row (`duplicate: true`) instead of a duplicate-looking feed entry. Two simulators exist and both post the exact same payload contract: `scripts/simulate-scanner.js` (interval-based background atmosphere; set `SCAN_METHOD=rfid` for an all-RFID demo) and the dashboard's **"Simulate RFID scan"** button, which always posts `method: "rfid"` with a random enrolled student and a live timestamp. The overview's attendance panel is a live feed of **today's** scans (newest first) that re-polls `/api/attendance/summary` every 5s — a physical reader hitting the same endpoint would appear there identically.
 - **Staffing outlook** — `src/staffing-predictor.js` is a **clearly-labelled statistical heuristic**: it computes each class's historical absence rate on each weekday from real `attendance_records` and projects the shortfall per timetable slot, and cross-references subjects on the curriculum that no staff member is qualified to teach (the same signal the generator reports as unresolved).
-- **Dashboard** — the attention queue renders from real `notifications` rows; Approve/Review/Fix/Generate buttons call real endpoints that update the database and re-run the scan. The timetable view now supports full manual editing (add / edit / delete any slot) alongside regeneration. The attendance panel is a live feed that re-polls `/api/attendance/summary` every 5s while visible.
+- **Dashboard** — the attention queue renders from real `notifications` rows; Approve/Review/Fix/Generate buttons call real endpoints that update the database and re-run the scan. The timetable view now supports full manual editing (add / edit / delete any slot) alongside regeneration. The attendance panel is a live feed that re-polls `/api/attendance/summary` every 5s while visible. The overview renders **reactively through a small hand-rolled observable store** (~15 lines of pub-sub in `public/app.js`): every action publishes one state update, and the stat cards, attention queue, attendance feed and staffing outlook re-render automatically — each panel only when its own slice actually changed (the 5s attendance poll updates the feed without touching the stat cards). The Data hub roster tables (students/staff/rooms) have instant client-side search over the already-loaded list.
 
 ---
 
@@ -259,7 +264,7 @@ No displayed number is fabricated: stats, notifications, predictions, extraction
 npm test
 ```
 
-Runs the full suite (`node --test "tests/**/*.test.js"`) against in-memory SQLite databases (route handlers are exercised over real HTTP via the shared `tests/helpers.js` harness — the only test double anywhere is a mocked Gemini client, plus stub-server tests that pin the exact Gemini wire format). Coverage: conflict detection (6), document extraction (parse / fence-stripping / fallback paths), forms upload→verify→corrected-data merge + retry-extract (including a full mocked-client success path), timetable generation (constraints + a cross-check that runs the *real* conflict detector over generated output), attendance scan validation, and staffing predictions.
+Runs the full suite (`node --test "tests/**/*.test.js"`) against in-memory SQLite databases (route handlers are exercised over real HTTP via the shared `tests/helpers.js` harness — the only test double anywhere is a mocked Gemini client, plus stub-server tests that pin the exact Gemini wire format). Coverage: conflict detection (6), document extraction (parse / fence-stripping / fallback paths), forms upload→verify→corrected-data merge + retry-extract (including a full mocked-client success path), timetable generation (constraints + a cross-check that runs the *real* conflict detector over generated output) and its slot add/edit/delete routes, attendance scan validation, roster CRUD + fee-status notification lifecycle, staffing predictions, and the dashboard's observable store.
 
 ---
 
