@@ -7,11 +7,16 @@
 // Usage (against the running app):
 //   BASE_URL=http://localhost:3000 \
 //   SEED_ADMIN_EMAIL=admin@your-school.org SEED_ADMIN_PASSWORD='...' \
-//   SCAN_INTERVAL_MS=4000 \
+//   SCAN_INTERVAL_MS=4000 [SCAN_METHOD=rfid] \
 //   node scripts/simulate-scanner.js
+//
+// SCAN_METHOD optionally forces every scan to one method (rfid | cv | manual)
+// — handy for an all-RFID demo. Unset, it rotates weighted like a real school.
 //
 // It logs in as the admin (to obtain a session cookie), fetches the real
 // roster + rooms, then scans a random student at a random room each tick.
+// The payload is byte-for-byte the same contract the dashboard's "Simulate
+// RFID scan" button and a physical reader post to POST /api/attendance/scan.
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS) || 4000;
@@ -19,7 +24,8 @@ const EMAIL = process.env.SEED_ADMIN_EMAIL;
 const PASSWORD = process.env.SEED_ADMIN_PASSWORD;
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const METHODS = ['rfid', 'rfid', 'cv', 'manual']; // weighted like a real school
+const METHOD_OVERRIDE = String(process.env.SCAN_METHOD || '').toLowerCase();
+const METHODS = METHOD_OVERRIDE ? [METHOD_OVERRIDE] : ['rfid', 'rfid', 'cv', 'manual']; // weighted like a real school
 
 async function main() {
   if (!EMAIL || !PASSWORD) {
@@ -59,7 +65,8 @@ async function main() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(`${res.status} ${body.error || ''}`);
-      console.log(`[scanner] ${payload.timestamp} ${payload.method.toUpperCase()} → ${body.attendance.student_name} @ ${body.attendance.room_name || 'no room'} (row #${body.attendance.id})`);
+      const dupNote = body.duplicate ? ' (duplicate — already present today)' : '';
+      console.log(`[scanner] ${payload.timestamp} ${payload.method.toUpperCase()} → ${body.attendance.student_name} @ ${body.attendance.room_name || 'no room'} (row #${body.attendance.id})${dupNote}`);
     } catch (err) {
       console.error(`[scanner] scan failed: ${err.message}`);
     }

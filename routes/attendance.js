@@ -45,6 +45,23 @@ router.post('/scan', (req, res) => {
     date = new Date().toISOString().slice(0, 10);
   }
 
+  // Idempotency: one present record per student per calendar day. RFID
+  // readers double-read badges held at the gate and rapid clicks hit the
+  // same case — a re-scan returns the existing row (duplicate: true) instead
+  // of inserting a second identical one that would look broken in the feed.
+  const dup = req.db.prepare(
+    `SELECT id FROM attendance_records WHERE student_id = ? AND date = ? AND status = 'present' ORDER BY id DESC LIMIT 1`
+  ).get(sid, date);
+  if (dup) {
+    const row = req.db.prepare(`
+      SELECT ar.*, s.name AS student_name, s.class, r.name AS room_name
+        FROM attendance_records ar
+        JOIN students s ON s.id = ar.student_id
+        LEFT JOIN rooms r ON r.id = ar.room_id
+       WHERE ar.id = ?`).get(dup.id);
+    return res.status(200).json({ ok: true, duplicate: true, attendance: row });
+  }
+
   const info = req.db.prepare(
     `INSERT INTO attendance_records (student_id, date, status, method, room_id)
      VALUES (?, ?, 'present', ?, ?)`
@@ -57,7 +74,7 @@ router.post('/scan', (req, res) => {
       LEFT JOIN rooms r ON r.id = ar.room_id
      WHERE ar.id = ?`).get(info.lastInsertRowid);
 
-  res.status(201).json({ ok: true, attendance: row });
+  res.status(201).json({ ok: true, duplicate: false, attendance: row });
 });
 
 // GET /api/attendance/summary (authed) — real counts from attendance_records
@@ -70,16 +87,18 @@ router.get('/summary', (req, res) => {
     `SELECT status, COUNT(*) c FROM attendance_records GROUP BY status`
   ).all();
 
-  const latestDate = req.db.prepare(`SELECT MAX(date) m FROM attendance_records`).get().m;
-  const todayRows = latestDate ? req.db.prepare(`
-    SELECT ar.status, ar.method, ar.date, s.name AS student_name, s.class
+  // today_rows is TODAY'S live scans, newest first — the dashboard feed shows
+  // the real ingestion pipeline filling up, not historical seed rows.
+  const todayCount = req.db.prepare(`SELECT COUNT(*) c FROM attendance_records WHERE date = date('now')`).get().c;
+  const todayRows = req.db.prepare(`
+    SELECT ar.status, ar.method, ar.date, ar.room_id, s.name AS student_name, s.class
       FROM attendance_records ar
       JOIN students s ON s.id = ar.student_id
-     WHERE ar.date = ?
-     ORDER BY s.name
-     LIMIT 50`).all(latestDate) : [];
+     WHERE ar.date = date('now')
+     ORDER BY ar.id DESC
+     LIMIT 50`).all();
 
-  res.json({ total, by_method: byMethod, by_status: byStatus, latest_date: latestDate, today_rows: todayRows });
+  res.json({ total, today_count: todayCount, by_method: byMethod, by_status: byStatus, today_rows: todayRows });
 });
 
 module.exports = router;

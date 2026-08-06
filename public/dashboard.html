@@ -366,6 +366,9 @@
   }
 
   /* ---------- attendance (live feed + simulate scan) ---------- */
+  var attScanBusy = false; // in-flight guard: one simulated scan at a time
+  var attFlash = null;     // transient feedback consumed by the next render
+
   function renderAttendance(att, container) {
     container.innerHTML = '';
     var byMethod = {};
@@ -373,13 +376,17 @@
     var total = att.total || 0;
 
     var toolbar = h('div', 'att-toolbar');
-    var info = h('span', 'mono', total + ' records today');
-    var simulate = h('button', 'btn btn--small btn--teal', 'Simulate a scan');
-    simulate.title = 'Posts a real event to POST /api/attendance/scan — the same endpoint a physical reader uses';
+    var info = h('span', 'mono', (att.today_count || 0) + ' scans today');
+    if (attFlash) { info.textContent = attFlash; attFlash = null; }
+    var simulate = h('button', 'btn btn--small btn--teal', 'Simulate RFID scan');
+    simulate.title = 'Posts a real RFID scan event (method: rfid) to POST /api/attendance/scan — the same endpoint a physical reader uses';
     simulate.addEventListener('click', simulateScan);
     toolbar.appendChild(info);
     toolbar.appendChild(simulate);
     container.appendChild(toolbar);
+    // Honest label: a faithful simulator of the real integration point, not fake hardware.
+    container.appendChild(h('p', 'mono att-scan-hint',
+      'Simulates a physical RFID reader posting a scan event to POST /api/attendance/scan — the exact endpoint real hardware would use.'));
 
     var bars = h('div', 'mock-chart', '');
     var barRow = h('div', 'bars', '');
@@ -414,23 +421,30 @@
 
   function simulateScan() {
     if (!state.students.length || !state.rooms.length) return;
+    if (attScanBusy) return; // rapid clicks are ignored while one is in flight
+    attScanBusy = true;
     var student = state.students[Math.floor(Math.random() * state.students.length)];
     var room = state.rooms[Math.floor(Math.random() * state.rooms.length)];
-    var method = ['rfid', 'rfid', 'cv', 'manual'][Math.floor(Math.random() * 4)];
     apiFetch('/api/attendance/scan', {
       method: 'POST',
       body: {
         student_id: student.id,
-        method: method,
+        method: 'rfid', // this button always demonstrates the RFID path specifically
         room_id: room.id,
         timestamp: new Date().toISOString(),
       },
     })
-      .then(function () {
-        refreshAttendancePanel();
-        loadOverview();
+      .then(function (body) {
+        attScanBusy = false;
+        attFlash = body && body.duplicate
+          ? student.name + ' already marked present today — duplicate RFID read ignored'
+          : 'RFID scan → ' + student.name + ' @ ' + room.name;
+        loadOverview(); // re-renders the feed (consumes attFlash) + the stats row
       })
-      .catch(function (err) { errorTop('Scan failed: ' + err.message); });
+      .catch(function (err) {
+        attScanBusy = false;
+        errorTop('Scan failed: ' + err.message);
+      });
   }
 
   function refreshAttendancePanel() {

@@ -755,3 +755,12 @@ button { font-family: inherit; }
 
 /* Single-slot editor controls inside timetable cells */
 .tt-cell .tt-edit { margin-top: 0.5rem; align-self: flex-start; }
+
+/* Attendance panel: honest simulator label under the toolbar */
+.att-scan-hint {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  max-width: 46ch;
+}
