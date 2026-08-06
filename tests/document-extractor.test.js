@@ -119,11 +119,11 @@ test('geminiClient posts inline_data and parses candidates[].content.parts[].tex
   });
   try {
     const text = await geminiClient({
-      apiKey: 'AIza-test', model: 'gemini-2.5-flash', mediaType: 'image/jpeg',
+      apiKey: 'AIza-test', model: 'gemini-3.6-flash', mediaType: 'image/jpeg',
       base64: 'ZmFrZQ==', prompt: 'p', timeoutMs: 5000, apiUrl: base,
     });
     assert.equal(captured.method, 'POST');
-    assert.match(captured.url, /^\/models\/gemini-2\.5-flash:generateContent\?key=AIza-test$/);
+    assert.match(captured.url, /^\/models\/gemini-3\.6-flash:generateContent\?key=AIza-test$/);
     const part = captured.body.contents[0].parts[0];
     assert.equal(part.inline_data.mime_type, 'image/jpeg', 'Gemini uses inline_data/mime_type snake_case');
     assert.equal(part.inline_data.data, 'ZmFrZQ==');
@@ -143,7 +143,7 @@ test('geminiClient surfaces the API error message (e.g. 429 rate limit)', async 
   });
   try {
     await assert.rejects(
-      geminiClient({ apiKey: 'k', model: 'gemini-2.5-flash', mediaType: 'image/jpeg', base64: 'x', prompt: 'p', timeoutMs: 5000, apiUrl: base }),
+      geminiClient({ apiKey: 'k', model: 'gemini-3.6-flash', mediaType: 'image/jpeg', base64: 'x', prompt: 'p', timeoutMs: 5000, apiUrl: base }),
       /rate limit exceeded/,
       'the API message (not just a status code) is propagated'
     );
@@ -152,9 +152,12 @@ test('geminiClient surfaces the API error message (e.g. 429 rate limit)', async 
   }
 });
 
-test('extractDocument runs the real geminiClient end-to-end via apiUrl', async () => {
-  // Pins the full path: extractDocument -> geminiClient (stub server) -> parsed schema.
+test('extractDocument runs the real geminiClient end-to-end via apiUrl (default model)', async () => {
+  // Pins the full path: extractDocument -> geminiClient (stub server) -> parsed
+  // schema, AND that the default GEMINI_MODEL (no model passed) is used.
+  let capturedUrl;
   const { server, base } = await stubGeminiServer((req, res) => {
+    capturedUrl = req.url;
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({
       candidates: [{ content: { parts: [{ text: '{"form_type":"fee_receipt","student_name":"Rohan Verma","confidence":0.93,"fields":{"amount":"42500"},"needs_human_review":false}' }] } }],
@@ -167,6 +170,7 @@ test('extractDocument runs the real geminiClient end-to-end via apiUrl', async (
     assert.equal(result.data.form_type, 'fee_receipt');
     assert.equal(result.data.student_name, 'Rohan Verma');
     assert.equal(result.data.confidence, 0.93);
+    assert.match(capturedUrl, /gemini-3\.6-flash:generateContent/, 'default model is gemini-3.6-flash');
   } finally {
     server.close();
     fs.unlinkSync(file);
@@ -180,7 +184,7 @@ test('geminiClient throws when the response has no text parts', async () => {
   });
   try {
     await assert.rejects(
-      geminiClient({ apiKey: 'k', model: 'gemini-2.5-flash', mediaType: 'image/jpeg', base64: 'x', prompt: 'p', timeoutMs: 5000, apiUrl: base }),
+      geminiClient({ apiKey: 'k', model: 'gemini-3.6-flash', mediaType: 'image/jpeg', base64: 'x', prompt: 'p', timeoutMs: 5000, apiUrl: base }),
       /no text content/
     );
   } finally {

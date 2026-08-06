@@ -13,9 +13,11 @@ const path = require('path');
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 // Configurable so deployments can point at any Gemini model without a code
-// change. Defaults to gemini-2.5-flash (stable, proven, free-tier Flash).
-// gemini-3.6-flash is the current latest stable Flash if you want the newest.
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// change. Defaults to gemini-3.6-flash (current stable/GA Flash — verified on
+// Google's models page). NOTE: older Flash models like gemini-2.5-flash are
+// restricted for NEW accounts ("no longer available to new users"), so a
+// newer model is the safe default for fresh keys.
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
 const FORM_TYPES = ['admission', 'leave_request', 'fee_receipt', 'medical', 'other'];
 

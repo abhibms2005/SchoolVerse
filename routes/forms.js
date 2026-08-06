@@ -70,12 +70,16 @@ router.get('/', (req, res) => {
  */
 function extractInBackground(db, formId, absPath) {
   const markFailed = (error) => {
+    const message = String(error);
+    // Log every extraction failure so host logs (e.g. Render) show the reason
+    // instead of only the silent 'failed' badge in the dashboard.
+    console.error(`[forms] extraction failed for form #${formId}: ${message}`);
     try {
       db.prepare(
         `UPDATE uploaded_forms
             SET extracted_data = ?, extraction_status = 'failed'
           WHERE id = ? AND extraction_status = 'pending'`
-      ).run(JSON.stringify({ needs_human_review: true, extraction_error: String(error) }), formId);
+      ).run(JSON.stringify({ needs_human_review: true, extraction_error: message }), formId);
     } catch (err) {
       console.error('[forms] failed to record extraction failure:', err);
     }
