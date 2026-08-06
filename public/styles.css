@@ -311,7 +311,7 @@ button { font-family: inherit; }
 /* ==========================================================================
    8. Bento feature grid
    ========================================================================== */
-.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4rem; perspective: 1400px; }
+.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4rem; perspective: 1800px; }
 .card {
   background: var(--card);
   border: none;

@@ -593,61 +593,74 @@
     { x: -1, y:  1 },  // 2 bottom-left   → Proactive Dashboard
     { x:  1, y:  1 }   // 3 bottom-right  → All-in-One Data Hub
   ];
-  var STAGGER = 0.09;   // progress-unit delay between consecutive cards
+  var STAGGER = 0.12;   // progress-unit delay between consecutive cards
   var VW = 0, VH = 0;
-  var dims = [];        // cached card w/h (grid doesn't move under transforms)
+  var TRAVEL = 0;       // scroll px to go 0 → 1 (≈ 0.72 viewport-heights, deliberate)
+  var tops = [];        // each card's layout top in document px (transform-independent)
 
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 
+  // Layout positions never move while cards are transformed, so measure once
+  // (and on resize). Transforms are cleared first so getBoundingClientRect
+  // returns the settled layout position even mid-flight.
   function measure() {
     VW = window.innerWidth; VH = window.innerHeight;
-    dims = cards.map(function (c) {
-      var r = c.getBoundingClientRect();
-      return { w: r.width, h: r.height };
+    TRAVEL = VH * 0.72;
+    cards.forEach(function (c) { c.style.transform = ''; c.style.opacity = ''; });
+    tops = cards.map(function (c) {
+      return c.getBoundingClientRect().top + window.scrollY;
     });
+    update();
   }
 
   function update() {
-    var rect = section.getBoundingClientRect();
-    // 0 when the section's top edge is at the bottom of the viewport,
-    // 1 when it reaches the top of the viewport. Fully reversible.
-    var raw = clamp((VH - rect.top) / VH, 0, 1);
-    var settled = raw >= 0.995;
-    bento.classList.toggle('settled', settled);
-
-    for (var i = 0; i < cards.length; i++) {
+    var done = true;
+    // First compute every card's progress so the .settled class reflects this
+    // frame BEFORE any transform is written (a transition must never fight the
+    // frame-by-frame retract on the settle→reverse boundary).
+    var states = cards.map(function (c, i) {
       var dir = DIRS[i] || DIRS[0];
+      // raw: 0 when THIS card's cell top is at the viewport bottom,
+      //      1 after it has scrolled up by TRAVEL (≈ a quarter from the top).
+      // Per-card window → the flight is visible while the card is on screen,
+      // not finished below the fold like the old section-wide window was.
+      var top = tops[i] - window.scrollY;
+      var raw = clamp((VH - top) / TRAVEL, 0, 1);
       var start = i * STAGGER;
       var p = clamp((raw - start) / (1 - start), 0, 1); // card-local progress
+      if (p < 1) done = false;
       var e = easeOutCubic(p);
-      var off = 1 - e;
-      var d = dims[i] || { w: 300, h: 200 };
+      return { dir: dir, off: 1 - e, e: e };
+    });
+    bento.classList.toggle('settled', done);
 
-      var dx = dir.x * (d.w / 2 + VW * 0.30) * off;   // fully off-screen at p=0
-      var dy = dir.y * (d.h / 2 + VH * 0.22) * off;
-      var tiltX = dir.y * 10 * off;                    // 3D lean that straightens
-      var tiltY = dir.x * -10 * off;
-      var sc = 0.85 + 0.15 * e;
+    states.forEach(function (s, i) {
+      // Large, viewport-anchored corner offsets: > half a viewport wide/tall
+      // plus a margin, so the flight visibly crosses the screen from the edge.
+      var dx = s.dir.x * (VW * 0.60 + 80) * s.off;
+      var dy = s.dir.y * (VH * 0.60 + 60) * s.off;
+      var tiltX = s.dir.y * 16 * s.off;   // up to ±16° lean, straightens to 0
+      var tiltY = s.dir.x * -16 * s.off;
+      var sc = 0.78 + 0.22 * s.e;         // scale up from 0.78 to 1
 
       cards[i].style.transform =
         'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px,0)' +
         ' rotateX(' + tiltX.toFixed(2) + 'deg) rotateY(' + tiltY.toFixed(2) + 'deg)' +
         ' scale(' + sc.toFixed(3) + ')';
-      cards[i].style.opacity = e.toFixed(3);
-    }
+      cards[i].style.opacity = s.e.toFixed(3);
+    });
   }
 
-  var ticking = false;
-  function onScroll() {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(function () { ticking = false; update(); });
-  }
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', function () { measure(); update(); });
+  // update() is layout-free (card positions are cached at measure time), so
+  // it runs synchronously in the scroll handler — no rAF lock that could drop
+  // events if requestAnimationFrame is suspended (hidden/backgrounded tab).
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', measure);
+  // Re-measure once web fonts settle — late font swaps can shift the grid by
+  // a few px and desync the cached card positions from their real cells.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
   measure();
-  update();
 })();
 </script>
 </body>
