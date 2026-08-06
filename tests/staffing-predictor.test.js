@@ -20,19 +20,18 @@ function seedWorld(db) {
   db.prepare(`INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section) VALUES (1, 2, 'Maths', 1, 1, '9A')`).run();
 }
 
-// 2026-08-04 is a Tuesday (strftime %w = 2 → day 1).
-const TUESDAY = '2026-08-04';
-const OTHER_DAY = '2026-08-03'; // Monday
+// 2026-08-04/11/18 are Tuesdays (strftime %w = 2 → day 1); 03/10/17 Mondays.
+const TUESDAYS = ['2026-08-04', '2026-08-11', '2026-08-18'];
+const MONDAYS = ['2026-08-03', '2026-08-10', '2026-08-17'];
 
 test('predicts shortfall from real historical absence on the slot weekday', () => {
   const db = makeDb();
   seedWorld(db);
-  // 9A's two students: both absent on the Tuesday, both present on Monday.
+  // 9A's two students: both absent every Tuesday (6-record sample, passes the
+  // minimum-sample guard), both present every Monday.
   const att = db.prepare(`INSERT INTO attendance_records (student_id, date, status) VALUES (?, ?, ?)`);
-  att.run(1, TUESDAY, 'absent');
-  att.run(2, TUESDAY, 'absent');
-  att.run(1, OTHER_DAY, 'present');
-  att.run(2, OTHER_DAY, 'present');
+  for (const date of TUESDAYS) { att.run(1, date, 'absent'); att.run(2, date, 'absent'); }
+  for (const date of MONDAYS) { att.run(1, date, 'present'); att.run(2, date, 'present'); }
 
   const predictions = predictStaffing(db, 10);
   const maths = predictions.find((p) => p.subject === 'Maths');
@@ -42,6 +41,17 @@ test('predicts shortfall from real historical absence on the slot weekday', () =
   assert.equal(maths.class_section, '9A');
   assert.equal(maths.predicted_shortfall, 2, 'both 9A students historically absent that weekday');
   assert.match(maths.reason, /100\.0%/);
+});
+
+test('tiny samples are ignored — no prediction from a single record', () => {
+  const db = makeDb();
+  seedWorld(db);
+  // Only ONE absence record exists for the class-weekday bucket — below the
+  // minimum-sample guard, so no statistically meaningless 100% projection.
+  db.prepare(`INSERT INTO attendance_records (student_id, date, status) VALUES (1, '2026-08-04', 'absent')`).run();
+
+  const predictions = predictStaffing(db, 10);
+  assert.ok(!predictions.some((p) => p.subject === 'Maths'), 'a 1-record bucket must not produce a prediction');
 });
 
 test('structural gap (no qualified teacher) is surfaced with the class size', () => {

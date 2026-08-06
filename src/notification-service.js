@@ -36,17 +36,12 @@ function notifyPendingForms(db) {
       WHERE f.status = 'pending_review'`
   ).all();
   for (const form of pending) {
-    upsertNotification(db, {
-      type: 'pending_review',
-      message: `${form.form_type} form for ${form.student_name || `student #${form.student_id || '?'}`} awaits review`,
-      severity: 'warning',
-      fingerprint: `pending_form_${form.id}`,
-    });
-
-    // Distinct notification for low-confidence / needs-review extractions so
-    // the admin queue surfaces which forms genuinely need eyes on them.
     let extracted = null;
     try { extracted = form.extracted_data ? JSON.parse(form.extracted_data) : null; } catch { extracted = null; }
+    // One row per form: a low-confidence / needs-review extraction gets the
+    // specific "manual review — low OCR confidence" row (which also implies
+    // the review is awaited), anything else gets the generic one. Emitting
+    // both for the same form would look like a duplicate in the queue.
     const lowConfidence = form.extraction_status === 'done' && extracted
       && (Number(extracted.confidence) < 0.6 || extracted.needs_human_review === true);
     if (lowConfidence) {
@@ -57,7 +52,14 @@ function notifyPendingForms(db) {
         severity: 'warning',
         fingerprint: `low_conf_form_${form.id}`,
       });
+      continue;
     }
+    upsertNotification(db, {
+      type: 'pending_review',
+      message: `${form.form_type} form for ${form.student_name || `student #${form.student_id || '?'}`} awaits review`,
+      severity: 'warning',
+      fingerprint: `pending_form_${form.id}`,
+    });
   }
 }
 

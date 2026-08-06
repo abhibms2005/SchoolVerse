@@ -45,14 +45,21 @@ function seedDemo(db) {
     ['A. Rao',    'Chemistry'],
     ['K. Sharma', 'Hindi'],
     ['V. Nair',   'Science'],
+    // Second Physics teacher — gives the Day-3 staffing suggestions a live
+    // candidate (Iyer's slots can suggest Menon when 10A is projected absent).
+    ['J. Menon',  'Physics'],
   ].map(([name, subject]) => db.prepare(`INSERT INTO staff (name, subject, contact) VALUES (?, ?, ?)`)
     .run(name, subject, 'not listed').lastInsertRowid);
-  const [IYER, DAS, MEHTA, RAO, SHARMA, NAIR] = staff;
+  const [IYER, DAS, MEHTA, RAO, SHARMA, NAIR, MENON] = staff;
 
   /* ---------- students ----------
      fee_status per student: Rohan is 'overdue' (his seeded fee receipt is
      still pending verification — a live demo hook: verify the receipt and
-     set his fees to paid), everyone else paid/pending. */
+     set his fees to paid), everyone else paid/pending.
+     Three students per class (9A/9B/10A/10B) — a realistic spread, and
+     large enough that the staffing predictor sees meaningful sample sizes
+     instead of "100% from 1 record" noise. The first six rows keep the
+     original indices (forms/fees seeds reference them by position). */
   const students = [
     ['Aarav Sharma', '9B',  'A', '+91 98100 11111', 'pending'],
     ['Diya Kapoor',  '10A', 'A', '+91 98100 22222', 'paid'],
@@ -60,6 +67,12 @@ function seedDemo(db) {
     ['Isha Patel',   '9A',  'A', '+91 98100 44444', 'paid'],
     ['Kabir Singh',  '10A', 'B', '+91 98100 55555', 'pending'],
     ['Meera Iyer',   '9B',  'B', '+91 98100 66666', 'paid'],
+    ['Sneha Reddy',  '9A',  'B', '+91 98100 77777', 'paid'],
+    ['Arjun Kulkarni', '9A', 'A', '+91 98100 88888', 'paid'],
+    ['Tara Joshi',   '9B',  'A', '+91 98100 99999', 'paid'],
+    ['Vihaan Malhotra', '10A', 'A', '+91 98100 12345', 'paid'],
+    ['Ananya Gupta', '10B', 'B', '+91 98100 23456', 'paid'],
+    ['Reyansh Pillai', '10B', 'A', '+91 98100 34567', 'paid'],
   ].map(([name, cls, section, contact, fee_status]) => db.prepare(
     `INSERT INTO students (name, class, section, guardian_contact, admission_date, fee_status, status)
      VALUES (?, ?, ?, ?, date('now', '-3 months'), ?, 'active')`)
@@ -151,23 +164,33 @@ function seedDemo(db) {
   }
   // Staff qualifications + weekly load caps (generator input).
   const qual = db.prepare(`INSERT INTO staff_subjects (staff_id, subject_id, max_periods_per_week) VALUES (?, ?, ?)`);
-  [[IYER, 'Physics'], [DAS, 'Maths'], [MEHTA, 'English'], [RAO, 'Chemistry'], [SHARMA, 'Hindi'], [NAIR, 'Science']]
+  [[IYER, 'Physics'], [MENON, 'Physics'], [DAS, 'Maths'], [MEHTA, 'English'], [RAO, 'Chemistry'], [SHARMA, 'Hindi'], [NAIR, 'Science']]
     .forEach(([staffId, subj]) => qual.run(staffId, subjectIds[subj], 25));
 
-  /* ---------- attendance (last 5 school days, mixed methods) ---------- */
+  /* ---------- attendance (deliberate 14-day story, mixed methods) ----------
+     A realistic window: 14 calendar days (each weekday appears twice), so the
+     staffing predictor sees meaningful sample sizes instead of "100% from 1
+     record" noise. Everyone present every day EXCEPT two deliberate stories:
+     - Isha (9A): absent the last 3 consecutive days → Day-5 absence alert.
+       With 3 students in 9A, her run keeps 9A's weekday rate under 20%, so it
+       never produces a noisy staffing suggestion.
+     - Diya (10A): absent on both Mondays → 10A's Monday bucket hits 33%
+       (2/6 records), clearing the predictor's sample/rate guards → exactly the
+       actionable suggestion fires (10A Physics Mon P2 → J. Menon) plus the
+       honest "no qualified teacher free" row for 10A Maths Mon P1. */
   const att = db.prepare(`INSERT INTO attendance_records (student_id, date, status, method) VALUES (?, ?, ?, ?)`);
   const methods = ['RFID', 'RFID', 'CV', 'manual'];
-  for (let d = 5; d >= 1; d--) {
-    const date = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const isoDay = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const weekday = (n) => new Date(Date.now() - n * 86400000).getUTCDay(); // 0=Sun … 1=Mon
+  for (let d = 14; d >= 1; d--) {
+    const date = isoDay(d);
     students.forEach((sid, i) => {
-      const absent = (i === d % students.length);          // rotate one absentee per day
-      att.run(sid, date, absent ? 'absent' : 'present', methods[i % methods.length]);
+      let status = 'present';
+      if (sid === students[3] && d <= 3) status = 'absent';                    // Isha's 3-day run
+      else if (sid === students[1] && weekday(d) === 1) status = 'absent';     // Diya on Mondays
+      att.run(sid, date, status, methods[i % methods.length]);
     });
   }
-  // Day-5 absence story: Isha (9A) has been absent the last 3 school days —
-  // the consecutive-absence alert is live on first load without simulating.
-  const isoDay = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-  for (let n = 1; n <= 3; n++) att.run(students[3], isoDay(n), 'absent', 'manual');
 
   /* ---------- uploaded forms (extracted_data follows the document-extractor
      schema so the review UI can display + edit it: form_type, student_name,

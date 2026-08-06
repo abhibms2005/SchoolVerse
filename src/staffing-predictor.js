@@ -10,6 +10,15 @@
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Statistical credibility guards: never project from a handful of records.
+// MIN_SAMPLE_RECORDS — a class-weekday bucket needs at least this many
+// attendance rows before a shortfall is even considered ("100% from 1
+// record" is noise, not insight). MIN_ABSENCE_RATE — the historical
+// absence rate must clear this bar too, so a single student's one-off
+// absence doesn't cry wolf. Both are exported for tests.
+const MIN_SAMPLE_RECORDS = 5;
+const MIN_ABSENCE_RATE = 0.2;
+
 /**
  * @param {object} db
  * @param {number} [limit] max predictions to return (default 10)
@@ -41,11 +50,11 @@ function predictStaffing(db, limit = 10) {
         FROM attendance_records ar
         JOIN students s ON s.id = ar.student_id
        WHERE s.class = ? AND ((strftime('%w', ar.date) + 6) % 7) = ?`).get(slot.class_section, slot.day);
-    if (!hist.total) continue;
+    if (!hist.total || hist.total < MIN_SAMPLE_RECORDS) continue;
 
     const rate = hist.absent / hist.total;
     const shortfall = Math.round(classSize * rate);
-    if (shortfall <= 0) continue;
+    if (shortfall <= 0 || rate < MIN_ABSENCE_RATE) continue;
 
     predictions.push({
       day: slot.day,
@@ -144,4 +153,4 @@ function suggestStaffing(db, limit = 10) {
   });
 }
 
-module.exports = { predictStaffing, suggestStaffing };
+module.exports = { predictStaffing, suggestStaffing, MIN_SAMPLE_RECORDS, MIN_ABSENCE_RATE };

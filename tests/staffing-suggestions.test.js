@@ -29,10 +29,14 @@ function seedWorld(db, { withSecondPhysics = true } = {}) {
     `INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section) VALUES (0, 1, 'Physics', ?, ?, '10A')`
   ).run(alpha, room).lastInsertRowid;
 
-  // 2026-01-05 is a Monday; both 10A students absent → 100% Monday absence.
-  const att = db.prepare(`INSERT INTO attendance_records (student_id, date, status, method) VALUES (?, '2026-01-05', 'absent', 'RFID')`);
-  att.run(s1);
-  att.run(s2);
+  // 2026-01-05/12/19 are Mondays; both 10A students absent every one of them
+  // → a realistic 6-record sample (passes the predictor's minimum-sample
+  // guard) at 100% Monday absence.
+  const att = db.prepare(`INSERT INTO attendance_records (student_id, date, status, method) VALUES (?, ?, 'absent', 'RFID')`);
+  for (const date of ['2026-01-05', '2026-01-12', '2026-01-19']) {
+    att.run(s1, date);
+    att.run(s2, date);
+  }
 
   return { alpha, beta, gamma, s1, s2, room, slotId };
 }
