@@ -2,15 +2,18 @@
 // Generates real notification rows from real database state.
 // Deduped via a unique `fingerprint` so repeated scans never duplicate.
 const { scanAllConflicts } = require('./conflict-detector');
+const { suggestStaffing } = require('./staffing-predictor');
 
-function upsertNotification(db, { type, message, severity, fingerprint }) {
+function upsertNotification(db, { type, message, severity, fingerprint, student_id, slot_id, staff_id }) {
   // INSERT OR IGNORE: a notification is created once. Resolving it — either
   // automatically (issue fixed) or by the admin's "Mark resolved" button —
   // must stick; the next scan must NOT force-reopen a dismissed row.
+  // student_id/slot_id/staff_id are optional refs (teacher scoping, staffing
+  // suggestions' one-click accept).
   db.prepare(
-    `INSERT OR IGNORE INTO notifications (type, message, severity, resolved, fingerprint)
-     VALUES (?, ?, ?, 0, ?)`
-  ).run(type, message, severity, fingerprint);
+    `INSERT OR IGNORE INTO notifications (type, message, severity, resolved, fingerprint, student_id, slot_id, staff_id)
+     VALUES (?, ?, ?, 0, ?, ?, ?, ?)`
+  ).run(type, message, severity, fingerprint, student_id ?? null, slot_id ?? null, staff_id ?? null);
 }
 
 function notifyClashes(db, flagged) {
@@ -118,6 +121,45 @@ function notifyGeneratedGaps(db, unresolved) {
   }
 }
 
+const STAFFING_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Surface actionable staffing suggestions (Day 3): for each projected
+ * shortfall, name a qualified teacher free at that slot — or say plainly that
+ * none exists. Reconciled wholesale each scan (resolve-all, re-open current),
+ * so the queue always mirrors the live outlook and an accepted/reassigned
+ * slot stops suggesting. A suggestion whose suggested teacher is already on
+ * the slot is skipped — nothing left to do. The Accept button in the queue
+ * reassigns via the existing slot-edit write path.
+ */
+function notifyStaffingSuggestions(db) {
+  const suggestions = suggestStaffing(db, 10);
+  db.prepare(`UPDATE notifications SET resolved = 1 WHERE type = 'staffing_suggestion'`).run();
+  for (const s of suggestions) {
+    if (!s.slot_id) continue; // structural gap → the staffing_gap notification covers it
+    const current = db.prepare(`SELECT staff_id FROM timetable_slots WHERE id = ?`).get(s.slot_id);
+    if (current && s.suggestion && current.staff_id === s.suggestion.staff_id) continue; // already applied
+
+    const fp = `staff_suggest_${s.slot_id}`;
+    const when = s.day !== null ? ` on ${STAFFING_DAY_NAMES[s.day]} P${s.period}` : '';
+    const action = s.suggestion
+      ? ` Suggest ${s.suggestion.staff_name} — qualified and free at this slot.`
+      : ` ${s.suggestion_reason}.`;
+    const message = `Staffing outlook: ${s.class_section} ${s.subject}${when} — ${s.reason}.${action}`;
+    db.prepare(
+      `UPDATE notifications SET resolved = 0, staff_id = ?, message = ? WHERE type = 'staffing_suggestion' AND fingerprint = ?`
+    ).run(s.suggestion ? s.suggestion.staff_id : null, message, fp);
+    upsertNotification(db, {
+      type: 'staffing_suggestion',
+      message,
+      severity: 'warning',
+      fingerprint: fp,
+      slot_id: s.slot_id,
+      staff_id: s.suggestion ? s.suggestion.staff_id : null,
+    });
+  }
+}
+
 /**
  * Close notifications whose underlying issue has been fixed.
  * Reconstructs each fingerprint from the live tables, so notifications
@@ -176,6 +218,7 @@ function runScan(db) {
   notifyPendingForms(db);
   notifyOverdueFees(db);
   notifyStaffingGaps(db);
+  notifyStaffingSuggestions(db);
   resolveResolvedIssues(db);
   // Record the scan time for /api/status (meta table is part of the schema).
   db.prepare(`INSERT INTO meta (key, value) VALUES ('last_scan_at', ?)

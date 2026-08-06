@@ -87,4 +87,61 @@ function predictStaffing(db, limit = 10) {
   return predictions.slice(0, Math.max(0, Number(limit) || 10));
 }
 
-module.exports = { predictStaffing };
+/**
+ * Actionable staffing suggestions (Day 3): for every projected shortfall,
+ * cross-reference the staff table's subject qualifications against timetable
+ * availability for that slot and name a replacement teacher — or say plainly
+ * that none exists. Everything from real data, computed at request time.
+ * @returns {Array<{day, period, subject, class_section, predicted_shortfall,
+ *   reason, slot_id: number|null, suggestion: {staff_id, staff_name}|null,
+ *   suggestion_reason: string}>}
+ */
+function suggestStaffing(db, limit = 10) {
+  return predictStaffing(db, limit).map((p) => {
+    if (p.day === null) {
+      // Structural gap: no one on the staff is qualified for the subject.
+      return Object.assign({}, p, {
+        slot_id: null,
+        suggestion: null,
+        suggestion_reason: 'no teacher is qualified to teach this subject',
+      });
+    }
+
+    // The exact slot this outlook item refers to (prediction keys are the
+    // slot's own day/period/subject/class, so the match is exact).
+    const slot = db.prepare(
+      `SELECT ts.id, ts.staff_id, st.name AS teacher_name
+         FROM timetable_slots ts
+         LEFT JOIN staff st ON st.id = ts.staff_id
+        WHERE ts.day = ? AND ts.period = ? AND ts.subject = ? AND ts.class_section = ?`
+    ).get(p.day, p.period, p.subject, p.class_section);
+    if (!slot) {
+      return Object.assign({}, p, { slot_id: null, suggestion: null, suggestion_reason: 'no matching timetable slot' });
+    }
+
+    // Candidates: ACTIVE staff qualified in this subject, not the current
+    // teacher, not already booked at this day+period, and within their weekly
+    // load cap (booked periods + this one ≤ max_periods_per_week).
+    const candidates = db.prepare(`
+      SELECT st.id, st.name, ss.max_periods_per_week,
+             (SELECT COUNT(*) FROM timetable_slots t2 WHERE t2.staff_id = st.id) AS booked
+        FROM staff_subjects ss
+        JOIN subjects sub ON sub.id = ss.subject_id
+        JOIN staff st    ON st.id = ss.staff_id
+       WHERE sub.name = ? AND st.status = 'active' AND st.id != ?
+         AND NOT EXISTS (SELECT 1 FROM timetable_slots t3
+                          WHERE t3.staff_id = st.id AND t3.day = ? AND t3.period = ?)
+    `).all(p.subject, slot.staff_id || -1, p.day, p.period);
+    const candidate = candidates.find((c) => (c.booked + 1) <= c.max_periods_per_week) || candidates[0];
+
+    return Object.assign({}, p, {
+      slot_id: slot.id,
+      suggestion: candidate ? { staff_id: candidate.id, staff_name: candidate.name } : null,
+      suggestion_reason: candidate
+        ? `${candidate.name} is qualified in ${p.subject} and free at this slot`
+        : 'no qualified teacher is free at this slot',
+    });
+  });
+}
+
+module.exports = { predictStaffing, suggestStaffing };
