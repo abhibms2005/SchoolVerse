@@ -123,6 +123,52 @@ function notifyGeneratedGaps(db, unresolved) {
 
 const STAFFING_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Consecutive absences that trigger an alert (Day 5). A student absent this
+// many school days in a row lands in the attention queue — and in their
+// teacher's scoped view via student_id.
+const CONSECUTIVE_ABSENCE_THRESHOLD = 3;
+
+/**
+ * Absence alerts from REAL scan rows: for each active student, count
+ * consecutive calendar-day absences ending at their most recent attendance
+ * record. At/above the threshold → an `absence` notification (fingerprint
+ * per student, re-opened while it applies, resolved the moment they attend).
+ */
+function notifyAbsences(db) {
+  const students = db.prepare(`SELECT id, name, class FROM students WHERE status = 'active'`).all();
+  const active = new Set();
+  for (const s of students) {
+    const rows = db.prepare(
+      `SELECT date, status FROM attendance_records WHERE student_id = ? ORDER BY date DESC`
+    ).all(s.id);
+    let run = 0;
+    let cursor = null;
+    for (const r of rows) {
+      if (r.status !== 'absent') break;            // a present/late day ends the run
+      const t = new Date(r.date + 'T00:00:00Z');
+      if (cursor === null) { cursor = t; run = 1; }
+      else {
+        if ((cursor - t) / 86400000 !== 1) break;  // a calendar gap ends the run
+        cursor = t; run += 1;
+      }
+    }
+    if (run >= CONSECUTIVE_ABSENCE_THRESHOLD) {
+      active.add(s.id);
+      const message = `Absence alert: ${s.name} (${s.class}) has been absent ${run} consecutive days`;
+      const fp = `absence_${s.id}`;
+      db.prepare(`UPDATE notifications SET resolved = 0, message = ? WHERE type = 'absence' AND fingerprint = ?`).run(message, fp);
+      upsertNotification(db, { type: 'absence', message, severity: 'warning', fingerprint: fp, student_id: s.id });
+    }
+  }
+  // Resolve students who attended (run dropped below the threshold).
+  db.prepare(`SELECT fingerprint FROM notifications WHERE type = 'absence' AND resolved = 0`).all().forEach((row) => {
+    const id = Number(row.fingerprint.replace('absence_', ''));
+    if (!active.has(id)) {
+      db.prepare(`UPDATE notifications SET resolved = 1 WHERE fingerprint = ?`).run(row.fingerprint);
+    }
+  });
+}
+
 /**
  * Surface actionable staffing suggestions (Day 3): for each projected
  * shortfall, name a qualified teacher free at that slot — or say plainly that
@@ -219,6 +265,7 @@ function runScan(db) {
   notifyOverdueFees(db);
   notifyStaffingGaps(db);
   notifyStaffingSuggestions(db);
+  notifyAbsences(db);
   resolveResolvedIssues(db);
   // Record the scan time for /api/status (meta table is part of the schema).
   db.prepare(`INSERT INTO meta (key, value) VALUES ('last_scan_at', ?)
@@ -227,4 +274,4 @@ function runScan(db) {
   return { clashes: flagged.length };
 }
 
-module.exports = { runScan, upsertNotification, resolveResolvedIssues, notifyGeneratedGaps };
+module.exports = { runScan, upsertNotification, resolveResolvedIssues, notifyGeneratedGaps, notifyAbsences, CONSECUTIVE_ABSENCE_THRESHOLD };
