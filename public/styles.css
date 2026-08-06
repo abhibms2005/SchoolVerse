@@ -311,7 +311,7 @@ button { font-family: inherit; }
 /* ==========================================================================
    8. Bento feature grid
    ========================================================================== */
-.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4rem; }
+.bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.4rem; perspective: 1400px; }
 .card {
   background: var(--card);
   border: none;
@@ -340,6 +340,18 @@ button { font-family: inherit; }
 .card h3 { font-size: 1.42rem; font-weight: 600; }
 .card .card-desc { margin-top: 0.6rem; color: var(--ink-muted); font-size: 0.98rem; }
 .card-art { margin-top: auto; padding-top: 1.6rem; }
+
+/* Scroll-linked 3D corner entrance (JS writes transform/opacity inline) */
+.bento-card {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transition: box-shadow 0.22s ease; /* no transform transition while animating */
+}
+.bento.settled .bento-card { transition: transform 0.22s ease, box-shadow 0.22s ease; } /* restore hover lift */
+@media (prefers-reduced-motion: reduce) {
+  .bento { perspective: none; }
+  .bento-card { transform: none !important; opacity: 1 !important; transition: none !important; }
+}
 
 /* Mini mocks inside bento cards (static illustration, fine to keep) */
 .mock-form { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.8rem; }

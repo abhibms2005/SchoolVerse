@@ -112,7 +112,7 @@
       </div>
 
       <div class="bento">
-        <article class="card card--lg reveal">
+        <article class="card card--lg bento-card" data-corner="0">
           <div class="card-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
           </div>
@@ -133,7 +133,7 @@
           </div>
         </article>
 
-        <article class="card card--sm reveal" style="--d:0.08s">
+        <article class="card card--sm bento-card" data-corner="1">
           <div class="card-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
           </div>
@@ -148,7 +148,7 @@
           </div>
         </article>
 
-        <article class="card card--sm reveal" style="--d:0.08s">
+        <article class="card card--sm bento-card" data-corner="2">
           <div class="card-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
           </div>
@@ -163,7 +163,7 @@
           </div>
         </article>
 
-        <article class="card card--lg reveal" style="--d:0.12s">
+        <article class="card card--lg bento-card" data-corner="3">
           <div class="card-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           </div>
@@ -567,6 +567,87 @@
       });
   }
   loadStats();
+})();
+</script>
+
+<script>
+/* ============================================================
+   Scroll-linked 3D corner entrance for the bento cards.
+   progress 0 → cards off-screen at the four viewport corners
+   progress 1 → cards settled in their grid cells (identity)
+   Reverses when scrolling back up; reduced-motion = static.
+   transform + opacity only (compositor-friendly).
+   ============================================================ */
+(function () {
+  var section = document.getElementById('product');
+  if (!section) return;
+  var bento = section.querySelector('.bento');
+  var cards = bento ? Array.prototype.slice.call(bento.querySelectorAll('.bento-card')) : [];
+  if (!cards.length) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  // direction each card flies in from (unit vector toward its corner)
+  var DIRS = [
+    { x: -1, y: -1 },  // 0 top-left      → AI Document Reader
+    { x:  1, y: -1 },  // 1 top-right     → Smart Timetables
+    { x: -1, y:  1 },  // 2 bottom-left   → Proactive Dashboard
+    { x:  1, y:  1 }   // 3 bottom-right  → All-in-One Data Hub
+  ];
+  var STAGGER = 0.09;   // progress-unit delay between consecutive cards
+  var VW = 0, VH = 0;
+  var dims = [];        // cached card w/h (grid doesn't move under transforms)
+
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function measure() {
+    VW = window.innerWidth; VH = window.innerHeight;
+    dims = cards.map(function (c) {
+      var r = c.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+  }
+
+  function update() {
+    var rect = section.getBoundingClientRect();
+    // 0 when the section's top edge is at the bottom of the viewport,
+    // 1 when it reaches the top of the viewport. Fully reversible.
+    var raw = clamp((VH - rect.top) / VH, 0, 1);
+    var settled = raw >= 0.995;
+    bento.classList.toggle('settled', settled);
+
+    for (var i = 0; i < cards.length; i++) {
+      var dir = DIRS[i] || DIRS[0];
+      var start = i * STAGGER;
+      var p = clamp((raw - start) / (1 - start), 0, 1); // card-local progress
+      var e = easeOutCubic(p);
+      var off = 1 - e;
+      var d = dims[i] || { w: 300, h: 200 };
+
+      var dx = dir.x * (d.w / 2 + VW * 0.30) * off;   // fully off-screen at p=0
+      var dy = dir.y * (d.h / 2 + VH * 0.22) * off;
+      var tiltX = dir.y * 10 * off;                    // 3D lean that straightens
+      var tiltY = dir.x * -10 * off;
+      var sc = 0.85 + 0.15 * e;
+
+      cards[i].style.transform =
+        'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px,0)' +
+        ' rotateX(' + tiltX.toFixed(2) + 'deg) rotateY(' + tiltY.toFixed(2) + 'deg)' +
+        ' scale(' + sc.toFixed(3) + ')';
+      cards[i].style.opacity = e.toFixed(3);
+    }
+  }
+
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { ticking = false; update(); });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', function () { measure(); update(); });
+  measure();
+  update();
 })();
 </script>
 </body>
