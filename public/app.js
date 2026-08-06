@@ -26,6 +26,27 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
+/* ---------- Tiny observable store (pub-sub) ----------
+ * createStore gives the dashboard a single source of truth for shared data:
+ * set() merges a patch into the state and notifies every subscriber, which
+ * re-renders only when its slice changed (unchanged slices keep their object
+ * identity, so subscribers can diff cheaply). ~15 lines, no framework.
+ */
+function createStore(initial = {}) {
+  let state = initial;
+  const subs = new Set();
+  function set(patch) {
+    state = Object.assign({}, state, patch);
+    subs.forEach((fn) => fn(state));
+    return state;
+  }
+  function subscribe(fn) {
+    subs.add(fn);
+    return () => subs.delete(fn);
+  }
+  return { get: () => state, set, subscribe };
+}
+
 /* ---------- Tiny DOM helpers ---------- */
 function h(tag, cls, text) {
   const el = document.createElement(tag);
@@ -307,4 +328,9 @@ function initReveals() {
     });
   }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
   els.forEach((el) => io.observe(el));
+}
+
+/* Expose to Node for unit tests (browser <script> loads skip this entirely). */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createStore };
 }

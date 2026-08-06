@@ -276,14 +276,63 @@
     box.appendChild(errorBanner(message));
   }
 
+  /* ---------- shared overview state (tiny observable store) ----------
+     The stat cards, recent-notification list, live attendance feed and
+     staffing outlook all render from ONE observable state object. Anything
+     that changes school data calls loadOverview() once — it fetches the
+     shared slice and publishes it; each panel's subscriber re-renders only
+     when ITS slice changed (unchanged slices keep object identity). No panel
+     re-fetches independently. */
+  var overviewEls = {
+    stats: document.getElementById('overviewStats'),
+    notifs: document.getElementById('overviewNotifs'),
+    attendance: document.getElementById('attendancePanel'),
+    staffing: document.getElementById('staffingPanel'),
+  };
+  var overviewStore = createStore({});
+  var overviewPrev = { stats: undefined, notifs: undefined, attendance: undefined, staffing: undefined };
+  overviewStore.subscribe(function (s) {
+    if (s.stats !== overviewPrev.stats) { overviewPrev.stats = s.stats; renderStatCards(s.stats); }
+    if (s.notifs !== overviewPrev.notifs) { overviewPrev.notifs = s.notifs; renderRecentNotifs(s.notifs); }
+    if (s.attendance !== overviewPrev.attendance) { overviewPrev.attendance = s.attendance; renderAttendance(s.attendance, overviewEls.attendance); }
+    if (s.staffing !== overviewPrev.staffing) { overviewPrev.staffing = s.staffing; renderStaffing(s.staffing, overviewEls.staffing); }
+  });
+
+  function renderStatCards(stats) {
+    overviewEls.stats.innerHTML = '';
+    [
+      { lbl: 'Open items', val: stats.open_notifications, sub: 'needing attention' },
+      { lbl: 'Forms verified', val: stats.forms_verified, sub: 'of ' + stats.forms_total + ' uploaded' },
+      { lbl: 'Attendance auto', val: stats.attendance_auto_pct, suffix: '%', sub: 'RFID + vision' },
+      { lbl: 'Clashes resolved', val: stats.clashes_resolved, sub: 'of ' + stats.clashes_detected + ' detected' },
+    ].forEach(function (s) {
+      var card = h('div', 'app-stat');
+      card.appendChild(h('p', 'app-stat-lbl', s.lbl));
+      var val = h('p', 'app-stat-val', '');
+      var n = h('span', '', String(s.val));
+      val.appendChild(n);
+      if (s.suffix) val.appendChild(h('small', '', s.suffix));
+      card.appendChild(val);
+      card.appendChild(h('p', 'app-stat-sub', s.sub));
+      overviewEls.stats.appendChild(card);
+    });
+  }
+
+  function renderRecentNotifs(notifs) {
+    if (notifs.length === 0) {
+      emptyState(overviewEls.notifs, { title: 'Everything is quiet', hint: 'No open notifications. The next issue will appear here the moment the system catches it.' });
+    } else {
+      overviewEls.notifs.innerHTML = '';
+      notifs.forEach(function (n) {
+        overviewEls.notifs.appendChild(buildNotifCard(n, resolveNotif));
+      });
+    }
+  }
+
   /* ---------- overview ---------- */
   function loadOverview() {
-    var statsEl = document.getElementById('overviewStats');
-    var notifEl = document.getElementById('overviewNotifs');
-    var attEl = document.getElementById('attendancePanel');
-    var staffEl = document.getElementById('staffingPanel');
-    skeletonCard(statsEl);
-    skeletonCard(staffEl);
+    skeletonCard(overviewEls.stats);
+    skeletonCard(overviewEls.staffing);
 
     Promise.all([
       apiFetch('/api/stats'),
@@ -302,40 +351,13 @@
         document.getElementById('appSub').textContent =
           stats.students + ' students · ' + stats.staff + ' staff · ' + stats.rooms + ' rooms';
 
-        statsEl.innerHTML = '';
-        [
-          { lbl: 'Open items', val: stats.open_notifications, sub: 'needing attention' },
-          { lbl: 'Forms verified', val: stats.forms_verified, sub: 'of ' + stats.forms_total + ' uploaded' },
-          { lbl: 'Attendance auto', val: stats.attendance_auto_pct, suffix: '%', sub: 'RFID + vision' },
-          { lbl: 'Clashes resolved', val: stats.clashes_resolved, sub: 'of ' + stats.clashes_detected + ' detected' },
-        ].forEach(function (s) {
-          var card = h('div', 'app-stat');
-          card.appendChild(h('p', 'app-stat-lbl', s.lbl));
-          var val = h('p', 'app-stat-val', '');
-          var n = h('span', '', String(s.val));
-          val.appendChild(n);
-          if (s.suffix) val.appendChild(h('small', '', s.suffix));
-          card.appendChild(val);
-          card.appendChild(h('p', 'app-stat-sub', s.sub));
-          statsEl.appendChild(card);
-        });
-
-        if (notifs.length === 0) {
-          emptyState(notifEl, { title: 'Everything is quiet', hint: 'No open notifications. The next issue will appear here the moment the system catches it.' });
-        } else {
-          notifEl.innerHTML = '';
-          notifs.forEach(function (n) {
-            notifEl.appendChild(buildNotifCard(n, resolveNotif));
-          });
-        }
-
-        renderAttendance(att, attEl);
-        renderStaffing(predictions, staffEl);
+        // Publish once — subscribers re-render their own panels.
+        overviewStore.set({ stats: stats, notifs: notifs, attendance: att, staffing: predictions });
       })
       .catch(function (err) {
-        errorState(statsEl, { message: err.message, onRetry: loadOverview });
-        notifEl.innerHTML = '';
-        attEl.innerHTML = '';
+        errorState(overviewEls.stats, { message: err.message, onRetry: loadOverview });
+        overviewEls.notifs.innerHTML = '';
+        overviewEls.attendance.innerHTML = '';
         errorTop(err.message);
       });
   }
@@ -452,7 +474,7 @@
 
   function refreshAttendancePanel() {
     apiFetch('/api/attendance/summary')
-      .then(function (att) { renderAttendance(att, document.getElementById('attendancePanel')); })
+      .then(function (att) { overviewStore.set({ attendance: att }); })
       .catch(function () { /* poll quietly; the panel re-renders on loadOverview */ });
   }
 
