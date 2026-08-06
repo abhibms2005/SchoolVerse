@@ -163,6 +163,7 @@
           <h2>Students</h2>
           <button class="btn btn--small btn--teal" type="button" data-hub-add="students">+ Add student</button>
         </div>
+        <div class="hub-search"><input type="search" id="hubSearchStudents" placeholder="Search students…" aria-label="Search students"></div>
         <div class="app-panel-body app-table-wrap" id="hubStudents"></div>
       </div>
       <div class="app-panel">
@@ -170,6 +171,7 @@
           <h2>Staff</h2>
           <button class="btn btn--small btn--teal" type="button" data-hub-add="staff">+ Add staff</button>
         </div>
+        <div class="hub-search"><input type="search" id="hubSearchStaff" placeholder="Search staff…" aria-label="Search staff"></div>
         <div class="app-panel-body app-table-wrap" id="hubStaff"></div>
       </div>
       <div class="app-panel">
@@ -177,6 +179,7 @@
           <h2>Rooms</h2>
           <button class="btn btn--small btn--teal" type="button" data-hub-add="rooms">+ Add room</button>
         </div>
+        <div class="hub-search"><input type="search" id="hubSearchRooms" placeholder="Search rooms…" aria-label="Search rooms"></div>
         <div class="app-panel-body app-table-wrap" id="hubRooms"></div>
       </div>
     </div>
@@ -890,6 +893,8 @@
     ],
   };
   var hubEdit = null; // { entity, row } while the modal is open
+  var hubData = {};   // entity -> full row list, kept for client-side search
+  var hubQuery = {};  // entity -> current search string
 
   function loadHub() {
     var containers = { students: 'hubStudents', staff: 'hubStaff', rooms: 'hubRooms' };
@@ -912,9 +917,21 @@
   }
 
   function renderHub(entity, rows, container) {
+    hubData[entity] = rows; // keep the full list so search filters what's already loaded
+    var q = (hubQuery[entity] || '').trim().toLowerCase();
+    var visible = q ? rows.filter(function (r) {
+      return HUB_COLS[entity].some(function (c) {
+        return r[c[0]] != null && String(r[c[0]]).toLowerCase().indexOf(q) !== -1;
+      });
+    }) : rows;
+
     container.innerHTML = '';
     if (!rows.length) {
       emptyState(container, { title: 'No ' + entity + ' yet', hint: 'Add your first ' + entity + ' with the button above.' });
+      return;
+    }
+    if (!visible.length) {
+      emptyState(container, { title: 'No matches for \u201c' + hubQuery[entity] + '\u201d', hint: 'Try another name, class or subject, or clear the search.' });
       return;
     }
     var table = h('table', 'app-table');
@@ -926,7 +943,7 @@
     thead.appendChild(hr);
     table.appendChild(thead);
     var tbody = h('tbody');
-    rows.forEach(function (r) {
+    visible.forEach(function (r) {
       var tr = h('tr');
       if (r.status === 'inactive') tr.classList.add('row-inactive');
       HUB_COLS[entity].forEach(function (c) {
@@ -1055,6 +1072,19 @@
 
   document.querySelectorAll('[data-hub-add]').forEach(function (btn) {
     btn.addEventListener('click', function () { openHubModal(btn.dataset.hubAdd, null); });
+  });
+
+  // Client-side search/filter: narrow the already-loaded roster rows as you
+  // type — no extra API call, the full list is already in hubData.
+  ['students', 'staff', 'rooms'].forEach(function (entity) {
+    var input = document.getElementById('hubSearch' + entity.charAt(0).toUpperCase() + entity.slice(1));
+    if (!input) return;
+    input.addEventListener('input', function () {
+      hubQuery[entity] = input.value;
+      if (hubData[entity]) {
+        renderHub(entity, hubData[entity], document.getElementById('hub' + entity.charAt(0).toUpperCase() + entity.slice(1)));
+      }
+    });
   });
 
   // After any roster mutation: the overview stat card + simulate-scan pick
