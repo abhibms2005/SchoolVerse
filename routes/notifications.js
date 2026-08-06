@@ -15,8 +15,12 @@ router.get('/', (req, res) => {
   const total = req.db.prepare(`SELECT COUNT(*) c FROM notifications ${where}`).get().c;
   // Rank open items by severity first (urgent clashes surface ahead of
   // warnings), then newest first — "issues surface, get ranked."
+  // slot_id + staff_id ride along so staffing-suggestion cards can offer a
+  // one-click Accept (reassign via the slot-edit write path); student_id lets
+  // teacher-scoped views filter to their own students.
   const rows = req.db.prepare(`
-    SELECT id, type, message, severity, resolved, created_at
+    SELECT id, type, message, severity, resolved, created_at,
+           student_id, slot_id, staff_id
       FROM notifications ${where}
      ORDER BY resolved ASC,
               CASE severity WHEN 'urgent' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,

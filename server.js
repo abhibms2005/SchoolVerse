@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { openDb } = require('./src/db');
 const { migrate } = require('./db/migrate');
-const { requireAuth, getSession, hashPassword } = require('./src/auth');
+const { requireAuth, requireRole, getSession, hashPassword } = require('./src/auth');
 const { runScan } = require('./src/notification-service');
 const { seedIfEmpty } = require('./db/seeds/dev-seed');
 
@@ -52,7 +52,15 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
    static file middleware would serve /dashboard.html to anyone.
    ------------------------------------------------------------------ */
 app.use('/dashboard.html', (req, res, next) => {
-  if (!getSession(req)) return res.redirect('/login.html');
+  const session = getSession(req);
+  if (!session) return res.redirect('/login.html');
+  if (session.role === 'teacher') return res.redirect('/teacher.html');
+  next();
+});
+app.use('/teacher.html', (req, res, next) => {
+  const session = getSession(req);
+  if (!session) return res.redirect('/login.html');
+  if (session.role !== 'teacher') return res.redirect('/dashboard.html');
   next();
 });
 
@@ -107,6 +115,12 @@ app.use('/api/notifications', publicOnly(require('./routes/notifications')));
 
 // Everything after this point requires a session cookie.
 app.use('/api', requireAuth);
+// Teacher-scoped surface (own timetable / students / alerts). Mounted BEFORE
+// the admin gate so teachers are allowed here and nowhere else.
+app.use('/api/teacher', requireRole('teacher', 'admin'), require('./routes/teacher'));
+// The rest of the API is admin-only: roster CRUD, forms, attendance, staffing
+// and every timetable mutation. A teacher session is rejected with 403.
+app.use('/api', requireRole('admin'));
 app.use('/api/timetable', require('./routes/timetable'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/forms', require('./routes/forms'));
@@ -191,6 +205,26 @@ if (ADMIN_EMAIL && ADMIN_PASSWORD) {
   } else if (existing.password_hash !== hash) {
     db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hash, existing.id);
     console.log(`[boot] admin password updated from env: ${ADMIN_EMAIL}`);
+  }
+}
+// Teacher account (optional): same env-driven pattern as the admin, but role =
+// 'teacher' and linked to a staff row (default 'R. Iyer', override with
+// SEED_TEACHER_STAFF_NAME) so its scope derives from real timetable data.
+const TEACHER_EMAIL = String(process.env.SEED_TEACHER_EMAIL || '').toLowerCase().trim();
+const TEACHER_PASSWORD = process.env.SEED_TEACHER_PASSWORD || '';
+if (TEACHER_EMAIL && TEACHER_PASSWORD) {
+  const teacherStaff = db.prepare(`SELECT id FROM staff WHERE name = ? AND status = 'active'`)
+    .get(process.env.SEED_TEACHER_STAFF_NAME || 'R. Iyer');
+  const existingTeacher = db.prepare('SELECT id, password_hash FROM admins WHERE email = ?').get(TEACHER_EMAIL);
+  const teacherHash = hashPassword(TEACHER_PASSWORD);
+  if (!existingTeacher) {
+    db.prepare(`INSERT INTO admins (email, password_hash, role, staff_id) VALUES (?, ?, 'teacher', ?)`)
+      .run(TEACHER_EMAIL, teacherHash, teacherStaff ? teacherStaff.id : null);
+    console.log(`[boot] teacher account created from env: ${TEACHER_EMAIL}`);
+  } else if (existingTeacher.password_hash !== teacherHash) {
+    db.prepare(`UPDATE admins SET password_hash = ?, role = 'teacher', staff_id = ? WHERE id = ?`)
+      .run(teacherHash, teacherStaff ? teacherStaff.id : null, existingTeacher.id);
+    console.log(`[boot] teacher account updated from env: ${TEACHER_EMAIL}`);
   }
 }
 

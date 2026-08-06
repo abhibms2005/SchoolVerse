@@ -20,14 +20,19 @@ function makeDb() {
  * @param {express.Router} router
  * @param {string} [mountPath] path the router is mounted at, like the real
  *   server.js mounts (e.g. '/api/forms'). Defaults to '/api'.
+ * @param {object} [session] the fake signed-in session; default is an admin.
+ *   Pass e.g. { role: 'teacher', staff_id: 3 } to test role-scoped behaviour.
  * @returns {Promise<{db, base, close}>}
  */
-async function mountRouter(router, mountPath = '/api') {
+async function mountRouter(router, mountPath = '/api', session) {
   const db = makeDb();
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => { req.db = db; next(); });
-  app.use(mountPath, (req, res, next) => { req.admin = { email: 'admin@test' }; next(); });
+  app.use(mountPath, (req, res, next) => {
+    req.admin = session || { email: 'admin@test', role: 'admin' };
+    next();
+  });
   app.use(mountPath, router);
   app.use(mountPath, (req, res) => res.status(404).json({ error: 'not found' }));
   // Mirror server.js's central error handler so route errors (e.g. multer

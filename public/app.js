@@ -118,6 +118,8 @@ const NOTIF_META = {
   pending_review: { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>' },
   staffing_gap:  { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
   fee_overdue:   { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>' },
+  staffing_suggestion: { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M8 21H3v-5M21 3l-7 7M3 21l7-7"/></svg>' },
+  absence:       { cls: 'warn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg>' },
 };
 
 const NOTIF_TAG = {
@@ -125,6 +127,8 @@ const NOTIF_TAG = {
   pending_review: 'Needs review',
   staffing_gap: 'Staffing gap',
   fee_overdue: 'Fee overdue',
+  staffing_suggestion: 'Staffing suggestion',
+  absence: 'Absence alert',
 };
 
 function notifIcon(n) { return (NOTIF_META[n.type] || NOTIF_META.pending_review).icon; }
@@ -132,10 +136,14 @@ function notifClass(n) { return n.resolved ? 'ok' : (NOTIF_META[n.type] || { cls
 
 /**
  * Build a <li class="notif ..."> from a notification record.
- * @param {object} n  notification row
- * @param {function} [onResolve]  called with the notification when approved
+ * @param {object} n  notification row (may carry slot_id/staff_id for
+ *   staffing-suggestion cards)
+ * @param {object} [handlers]  { onResolve(n), onAccept(n) } — onResolve is
+ *   the standard "Mark resolved"; onAccept renders a one-click "Accept
+ *   suggestion" button that reassigns the suggested teacher via the existing
+ *   slot-edit write path.
  */
-function buildNotifCard(n, onResolve) {
+function buildNotifCard(n, handlers = {}) {
   const li = h('li', `notif notif--${notifClass(n)}`);
   if (n.resolved) li.classList.add('is-resolved');
 
@@ -151,21 +159,40 @@ function buildNotifCard(n, onResolve) {
   li.appendChild(h('p', '', notifDetail(n)));
   li.appendChild(h('div', 'notif-meta', `${timeAgo(n.created_at)} · ${n.type.replace('_', ' ')}`));
 
-  if (!n.resolved && onResolve) {
+  if (!n.resolved) {
     const actions = h('div', 'notif-actions');
-    const btn = h('button', 'btn btn--small btn--gold btn--resolve', 'Mark resolved');
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      btn.textContent = 'Working…';
-      try {
-        await onResolve(n);
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Retry';
-      }
-    });
-    actions.appendChild(btn);
-    li.appendChild(actions);
+    // One-click accept for staffing suggestions: reassigns the slot to the
+    // suggested teacher through PATCH /api/timetable/slots/:id/reassign — the
+    // SAME write path as the manual editor, so no parallel code exists.
+    if (n.type === 'staffing_suggestion' && handlers.onAccept && n.slot_id && n.staff_id) {
+      const accept = h('button', 'btn btn--small btn--teal', 'Accept suggestion');
+      accept.addEventListener('click', async () => {
+        accept.disabled = true;
+        accept.textContent = 'Applying…';
+        try {
+          await handlers.onAccept(n);
+        } catch (err) {
+          accept.disabled = false;
+          accept.textContent = 'Retry'; // h('button') loses the original label on retry
+        }
+      });
+      actions.appendChild(accept);
+    }
+    if (handlers.onResolve) {
+      const btn = h('button', 'btn btn--small btn--gold btn--resolve', 'Mark resolved');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Working…';
+        try {
+          await handlers.onResolve(n);
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Retry';
+        }
+      });
+      actions.appendChild(btn);
+    }
+    if (actions.childElementCount) li.appendChild(actions);
   }
   return li;
 }
@@ -174,6 +201,8 @@ function notifDetail(n) {
   if (n.type === 'clash') return 'Two classes need the same teacher or room at the same period.';
   if (n.type === 'staffing_gap') return 'A class has no teacher assigned for this slot.';
   if (n.type === 'fee_overdue') return 'A student\u2019s fees are flagged as overdue — update their fee status when settled.';
+  if (n.type === 'staffing_suggestion') return n.staff_id ? 'A qualified teacher is free at this slot — accepting applies the reassignment.' : 'No qualified teacher is free at this slot right now.';
+  if (n.type === 'absence') return 'A student has missed several consecutive school days.';
   return 'A digitised form is waiting for your sign-off.';
 }
 

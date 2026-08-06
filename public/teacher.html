@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teacher view — SchoolVerse</title>
+<meta name="theme-color" content="#14213D">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213D'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='38' font-weight='700' fill='%23FAF7F0' text-anchor='middle'%3ES%3C/text%3E%3Cpath d='M14 50 L50 14' stroke='%23C9A227' stroke-width='4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-topbar">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="SchoolVerse — landing page">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-name">School<em>Verse</em></span>
+    </a>
+    <div class="app-user">
+      <span class="avatar" aria-hidden="true">T</span>
+      <span id="userEmail">teacher</span>
+      <button class="btn btn--small btn--ghost-paper" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="app-main" id="main">
+  <div class="app-head">
+    <div>
+      <p class="eyebrow" style="margin-bottom:0.6rem;">Teacher console</p>
+      <h1>Good morning, <span id="teacherName">Teacher</span></h1>
+      <p class="app-sub" id="appSub">Loading your classes…</p>
+    </div>
+  </div>
+
+  <div id="topError"></div>
+
+  <!-- My timetable (read-only) -->
+  <div class="app-panel" style="margin-bottom:1.4rem;">
+    <div class="app-panel-head"><h2>My weekly timetable</h2><span class="mono" id="ttSub"></span></div>
+    <div class="app-panel-body">
+      <div class="tt-wrap" id="ttWrap"></div>
+    </div>
+  </div>
+
+  <div class="app-grid">
+    <!-- My students' attendance + manual correction -->
+    <div class="app-panel">
+      <div class="app-panel-head">
+        <h2>My students' attendance</h2>
+        <span class="mono" style="color:var(--ink-muted);">forgot a badge? correct it here</span>
+      </div>
+      <div class="app-panel-body app-table-wrap" id="attWrap"></div>
+    </div>
+
+    <!-- Student alerts -->
+    <div class="app-panel">
+      <div class="app-panel-head"><h2>Alerts for my students</h2><span class="mono" style="color:var(--ink-muted);">real notifications, read-only</span></div>
+      <div class="app-panel-body" id="notifWrap"></div>
+    </div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var state = { me: null, teacher: null, classes: [], students: [], records: [], timetable: null };
+
+  var els = {
+    email: document.getElementById('userEmail'),
+    name: document.getElementById('teacherName'),
+    sub: document.getElementById('appSub'),
+    ttSub: document.getElementById('ttSub'),
+    tt: document.getElementById('ttWrap'),
+    att: document.getElementById('attWrap'),
+    notifs: document.getElementById('notifWrap'),
+  };
+
+  function errorTop(message) {
+    var box = document.getElementById('topError');
+    box.innerHTML = '';
+    box.appendChild(errorBanner(message));
+  }
+
+  // Shared state through the same tiny observable store as the admin view —
+  // one fetch per source, panels re-render per slice.
+  var store = createStore({ timetable: undefined, attendance: undefined, notifs: undefined });
+  var prev = {};
+  store.subscribe(function (s) {
+    if (s.timetable !== prev.timetable) { prev.timetable = s.timetable; renderTimetable(s.timetable); }
+    if (s.attendance !== prev.attendance) { prev.attendance = s.attendance; renderAttendance(s.attendance); }
+    if (s.notifs !== prev.notifs) { prev.notifs = s.notifs; renderNotifs(s.notifs); }
+  });
+
+  /* ---------- auth / header ---------- */
+  apiFetch('/api/auth/me')
+    .then(function (me) {
+      state.me = me;
+      els.email.textContent = me.email;
+      if (me.role !== 'teacher') window.location.href = '/dashboard.html';
+    })
+    .catch(function () { /* redirect handled by apiFetch */ });
+
+  document.getElementById('logoutBtn').addEventListener('click', function () {
+    apiFetch('/api/auth/logout', { method: 'POST' })
+      .finally(function () { window.location.href = '/login.html'; });
+  });
+
+  /* ---------- timetable (read-only) ---------- */
+  function renderTimetable(data) {
+    els.tt.innerHTML = '';
+    if (!data || !data.slots || !data.slots.length) {
+      emptyState(els.tt, { title: 'No classes assigned yet', hint: 'Your timetable appears here once the office schedules you.' });
+      return;
+    }
+    els.tt.appendChild(buildTimetable(data, {})); // no edit/fix controls — read-only
+    var clash = data.slots.filter(function (s) { return s.conflict === 1; }).length;
+    els.ttSub.textContent = clash ? clash + ' flagged clash(es) — the office has been notified' : 'all clear';
+  }
+
+  /* ---------- attendance with manual correction ---------- */
+  function renderAttendance(data) {
+    els.att.innerHTML = '';
+    if (!data || !data.students || !data.students.length) {
+      emptyState(els.att, { title: 'No students in your classes', hint: 'Students appear here once they are enrolled in a class you teach.' });
+      return;
+    }
+    state.students = data.students;
+    state.records = data.records || [];
+    els.sub.textContent = state.students.length + ' students · ' + (data.classes || []).join(', ');
+
+    var byStudentDate = {};
+    state.records.forEach(function (r) {
+      byStudentDate[r.student_id + '|' + r.date] = r;
+    });
+
+    var days = [];
+    for (var i = 0; i < 7; i++) {
+      days.push(new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10));
+    }
+
+    var table = h('table', 'app-table');
+    var thead = h('thead');
+    var hr = h('tr');
+    hr.appendChild(h('th', '', 'Student'));
+    days.forEach(function (d) {
+      var th = h('th', 'num', d.slice(5)); // MM-DD
+      th.title = d;
+      hr.appendChild(th);
+    });
+    hr.appendChild(h('th', '', ''));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = h('tbody');
+    state.students.forEach(function (s) {
+      var tr = h('tr');
+      tr.appendChild(h('td', '', s.name + ' · ' + s.class));
+      var lastChanged = null;
+      days.forEach(function (d) {
+        var td = h('td', 'num');
+        var rec = byStudentDate[s.id + '|' + d];
+        if (!rec) {
+          td.appendChild(h('span', 'badge badge--muted', '—'));
+        } else {
+          var cls = rec.status === 'present' ? 'badge--ok' : rec.status === 'late' ? 'badge--warning' : 'badge--urgent';
+          td.appendChild(h('span', 'badge ' + cls, rec.status.charAt(0).toUpperCase()));
+          td.title = rec.status + ' · via ' + rec.method;
+          lastChanged = { id: s.id, date: d, status: rec.status, el: td };
+        }
+        tr.appendChild(td);
+      });
+      var act = h('td', '');
+      var sel = h('select', '');
+      ['', 'present', 'absent', 'late'].forEach(function (v) {
+        var opt = h('option', '', v ? v.charAt(0).toUpperCase() + v.slice(1) : '— correct —');
+        opt.value = v;
+        sel.appendChild(opt);
+      });
+      var go = h('button', 'btn btn--small btn--teal', 'Save');
+      go.disabled = true;
+      sel.addEventListener('change', function () { go.disabled = !sel.value; });
+      go.addEventListener('click', function () {
+        go.disabled = true;
+        go.textContent = 'Saving…';
+        var date = days[days.length - 1]; // corrections default to today; a real picker is overkill here
+        apiFetch('/api/teacher/attendance/' + s.id, { method: 'PATCH', body: { date: date, status: sel.value } })
+          .then(function () {
+            go.textContent = 'Save';
+            sel.value = '';
+            loadAttendance();
+            flash('topError', s.name + ' marked ' + sel.value + ' for ' + date + ' — scanned at the same endpoint real hardware uses');
+          })
+          .catch(function (err) {
+            go.textContent = 'Save';
+            errorTop('Could not save: ' + err.message);
+          });
+      });
+      var wrap = h('div', 'actions');
+      wrap.appendChild(sel);
+      wrap.appendChild(go);
+      act.appendChild(wrap);
+      tr.appendChild(act);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    els.att.appendChild(table);
+  }
+
+  function flash(id, message) {
+    var box = document.getElementById(id);
+    box.innerHTML = '';
+    box.appendChild(errorBanner(message));
+    setTimeout(function () { if (box.firstChild) box.firstChild.remove(); }, 6000);
+  }
+
+  /* ---------- alerts (read-only) ---------- */
+  function renderNotifs(items) {
+    els.notifs.innerHTML = '';
+    if (!items || !items.length) {
+      emptyState(els.notifs, { title: 'No alerts for your students', hint: 'Absence alerts and form reviews for your classes will appear here.' });
+      return;
+    }
+    var ul = h('ul', 'app-notif-list');
+    items.forEach(function (n) {
+      var li = h('li', 'app-notif app-notif--' + (n.severity === 'urgent' ? 'urgent' : 'warn'));
+      var body = h('div', 'app-notif-body');
+      body.appendChild(h('h3', '', n.message));
+      body.appendChild(h('p', '', (n.student_name || '') + (n.class ? ' · ' + n.class : '') + ' · ' + timeAgo(n.created_at)));
+      li.appendChild(body);
+      ul.appendChild(li);
+    });
+    els.notifs.appendChild(ul);
+  }
+
+  /* ---------- loaders ---------- */
+  function loadTimetable() {
+    skeletonCard(els.tt);
+    apiFetch('/api/teacher/timetable')
+      .then(function (data) {
+        state.teacher = data.teacher;
+        els.name.textContent = data.teacher ? data.teacher.name : 'Teacher';
+        store.set({ timetable: data });
+      })
+      .catch(function (err) { errorState(els.tt, { message: err.message, onRetry: loadTimetable }); });
+  }
+
+  function loadAttendance() {
+    skeletonCard(els.att);
+    apiFetch('/api/teacher/attendance?days=7')
+      .then(function (data) { store.set({ attendance: data }); })
+      .catch(function (err) { errorState(els.att, { message: err.message, onRetry: loadAttendance }); });
+  }
+
+  function loadNotifs() {
+    skeletonCard(els.notifs);
+    apiFetch('/api/teacher/notifications')
+      .then(function (data) { store.set({ notifs: data.notifications || [] }); })
+      .catch(function (err) { errorState(els.notifs, { message: err.message, onRetry: loadNotifs }); });
+  }
+
+  loadTimetable();
+  loadAttendance();
+  loadNotifs();
+  // Alerts refresh quietly so a live absence/scan change shows up.
+  setInterval(function () { loadNotifs(); }, 15000);
+  setInterval(function () { loadAttendance(); }, 30000);
+})();
+</script>
+</body>
+</html>

@@ -324,9 +324,24 @@
     } else {
       overviewEls.notifs.innerHTML = '';
       notifs.forEach(function (n) {
-        overviewEls.notifs.appendChild(buildNotifCard(n, resolveNotif));
+        overviewEls.notifs.appendChild(buildNotifCard(n, { onResolve: resolveNotif, onAccept: acceptSuggestion }));
       });
     }
+  }
+
+  // One-click accept for a staffing suggestion: reassigns the slot to the
+  // suggested teacher through the SAME write path as the manual editor
+  // (PATCH /api/timetable/slots/:id/reassign) — no parallel code.
+  function acceptSuggestion(n) {
+    return apiFetch('/api/timetable/slots/' + n.slot_id + '/reassign', {
+      method: 'PATCH',
+      body: { staff_id: n.staff_id },
+    })
+      .then(function () {
+        if (currentTab === 'notifications') loadAllNotifications();
+        else loadOverview();
+        loadTimetable();
+      });
   }
 
   /* ---------- overview ---------- */
@@ -618,7 +633,7 @@
         }
         container.innerHTML = '';
         var ul = h('ul', 'app-notif-list');
-        items.forEach(function (n) { ul.appendChild(buildNotifCard(n, resolveNotif)); });
+        items.forEach(function (n) { ul.appendChild(buildNotifCard(n, { onResolve: resolveNotif, onAccept: acceptSuggestion })); });
         container.appendChild(ul);
       })
       .catch(function (err) { errorState(container, { message: err.message, onRetry: loadAllNotifications }); });

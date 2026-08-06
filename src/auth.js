@@ -52,7 +52,15 @@ function readCookies(req) {
 }
 
 function issueToken(admin) {
-  return sign({ email: admin.email, exp: Date.now() + SESSION_TTL_MS });
+  // Role + staff link ride in the signed payload so every request can scope
+  // itself without a DB lookup; a 'teacher' account's staff_id ties its
+  // timetable/students to the real staff table.
+  return sign({
+    email: admin.email,
+    role: admin.role || 'admin',
+    staff_id: admin.staff_id || null,
+    exp: Date.now() + SESSION_TTL_MS,
+  });
 }
 
 function setSessionCookie(res, token) {
@@ -75,6 +83,20 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/**
+ * Role guard: 403 unless the signed-in user has one of the given roles.
+ * A signed session WITHOUT a role (issued before the multi-role change, or a
+ * tampered payload that still verifies) is rejected cleanly — never a 500.
+ */
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.admin || !req.admin.role || !roles.includes(req.admin.role)) {
+      return res.status(403).json({ error: `forbidden — requires ${roles.join(' or ')} access` });
+    }
+    next();
+  };
+}
+
 /** Hash + compare helpers (bcrypt). */
 function hashPassword(plain) {
   return bcrypt.hashSync(plain, 10);
@@ -86,10 +108,12 @@ function checkPassword(plain, hash) {
 module.exports = {
   COOKIE_NAME,
   issueToken,
+  verify,
   setSessionCookie,
   clearSessionCookie,
   getSession,
   requireAuth,
+  requireRole,
   hashPassword,
   checkPassword,
 };

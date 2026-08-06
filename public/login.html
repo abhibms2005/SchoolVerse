@@ -61,7 +61,12 @@
         password: document.getElementById('password').value,
       }),
     })
-      .then(function () { window.location.href = '/dashboard.html'; })
+      .then(function (data) {
+        // Role-aware landing: teachers go to their own view, admins to the
+        // full dashboard. The server-side page guards enforce the same rule
+        // for direct URL hits, so this is just the happy-path redirect.
+        window.location.href = data && data.role === 'teacher' ? '/teacher.html' : '/dashboard.html';
+      })
       .catch(function (err) {
         btn.disabled = false;
         btn.textContent = 'Sign in';

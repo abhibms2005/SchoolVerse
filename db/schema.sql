@@ -118,20 +118,29 @@ CREATE INDEX IF NOT EXISTS idx_forms_status ON uploaded_forms (status);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  type        TEXT NOT NULL CHECK (type IN ('clash', 'pending_review', 'staffing_gap', 'fee_overdue')),
+  type        TEXT NOT NULL CHECK (type IN ('clash', 'pending_review', 'staffing_gap', 'fee_overdue', 'staffing_suggestion', 'absence')),
   message     TEXT NOT NULL,
   severity    TEXT NOT NULL DEFAULT 'warning'
     CHECK (severity IN ('urgent', 'warning', 'ok')),
   resolved    INTEGER NOT NULL DEFAULT 0,
   fingerprint TEXT NOT NULL UNIQUE,         -- dedupes repeated scans
+  student_id  INTEGER REFERENCES students(id) ON DELETE SET NULL,  -- scopes teacher views / absence alerts
+  slot_id     INTEGER REFERENCES timetable_slots(id) ON DELETE SET NULL,  -- staffing suggestions target a slot
+  staff_id    INTEGER REFERENCES staff(id) ON DELETE SET NULL,     -- staffing suggestions name a teacher
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_unresolved ON notifications (resolved, created_at);
 
+-- Users table (role column turns the single-admin tool into a multi-role
+-- platform). A 'teacher' account links to a staff row so its scope — own
+-- timetable, own students — derives from real data, not duplicated config.
 CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'admin'
+    CHECK (role IN ('admin', 'teacher')),
+  staff_id      INTEGER REFERENCES staff(id) ON DELETE SET NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

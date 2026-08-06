@@ -17,7 +17,9 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'invalid email or password' });
   }
   setSessionCookie(res, issueToken(admin));
-  res.json({ email: admin.email });
+  // role tells the login page where to send the user (dashboard vs teacher
+  // view); staff_id lets the teacher UI know its scope without a lookup.
+  res.json({ email: admin.email, role: admin.role || 'admin', staff_id: admin.staff_id || null });
 });
 
 // POST /api/auth/logout
@@ -28,7 +30,7 @@ router.post('/logout', (req, res) => {
 
 // GET /api/auth/me — self-guarded (this router is mounted pre-guard)
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ email: req.admin.email });
+  res.json({ email: req.admin.email, role: req.admin.role || 'admin', staff_id: req.admin.staff_id || null });
 });
 
 module.exports = router;
