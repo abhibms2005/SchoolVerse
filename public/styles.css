@@ -752,3 +752,6 @@ button { font-family: inherit; }
 .btn--danger:hover { background: #B83434; box-shadow: 0 12px 24px -12px rgba(201, 52, 52, 0.6); }
 .app-table tr.row-inactive td { opacity: 0.55; }
 .app-table tr.row-inactive td:last-child { opacity: 1; }
+
+/* Single-slot editor controls inside timetable cells */
+.tt-cell .tt-edit { margin-top: 0.5rem; align-self: flex-start; }

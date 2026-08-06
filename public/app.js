@@ -160,7 +160,7 @@ const PERIODS = [1, 2, 3, 4, 5, 6];
 /**
  * Render the weekly grid from API data into a <table class="tt">.
  * @param {object} data  { slots, rooms, staff }
- * @param {object} opts  { showFix:boolean, onFix:function(slot, roomId) }
+ * @param {object} opts  { showFix, onFix(slot, roomId), showEdit, onEdit(slot) }
  */
 function buildTimetable(data, opts = {}) {
   const { slots = [], rooms = [] } = data;
@@ -234,6 +234,17 @@ function buildTimetable(data, opts = {}) {
         } else if (hasResolved) {
           const badge = h('span', 'tt-badge', 'Auto-resolved');
           cell.appendChild(badge);
+        }
+
+        // Single-slot editor: every OCCUPIED cell gets an Edit control (not
+        // just clash cells) — opens the modal to change any field.
+        if (opts.showEdit && opts.onEdit) {
+          cellSlots.forEach((s) => {
+            const edit = h('button', 'btn btn--small btn--ghost tt-edit', 'Edit');
+            edit.setAttribute('aria-label', 'Edit ' + s.class_section + ' ' + s.subject);
+            edit.addEventListener('click', () => opts.onEdit(s));
+            cell.appendChild(edit);
+          });
         }
       }
       row.appendChild(cell);

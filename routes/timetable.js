@@ -117,26 +117,91 @@ router.post('/generate', (req, res) => {
   res.json({ ok: true, slots, unresolved: result.unresolved, summary: result.summary });
 });
 
-// PATCH /api/timetable/slots/:id/reassign  { staff_id?, room_id? } — fix a clash
+// Validate a slot body against the schema's constraints: day/period ranges,
+// required text fields, and that any staff/room ids actually exist (the UI
+// only offers active ones; this catches hand-crafted requests instead of a
+// 500 from the FK constraint).
+function validateSlotFields(db, body) {
+  const errors = [];
+  // Ranges match the grid the dashboard renders (Mon-Fri x periods 1-6): a
+  // slot outside them would be invisible in every view.
+  if (body.day !== undefined) {
+    const d = Number(body.day);
+    if (!(Number.isInteger(d) && d >= 0 && d <= 4)) errors.push('day must be an integer 0-4 (0 = Monday)');
+  }
+  if (body.period !== undefined) {
+    const p = Number(body.period);
+    if (!(Number.isInteger(p) && p >= 1 && p <= 6)) errors.push('period must be an integer 1-6');
+  }
+  if (body.subject !== undefined && (typeof body.subject !== 'string' || !body.subject.trim())) {
+    errors.push('subject must be a non-empty string');
+  }
+  if (body.class_section !== undefined && (typeof body.class_section !== 'string' || !body.class_section.trim())) {
+    errors.push('class_section must be a non-empty string');
+  }
+  for (const [key, label, table] of [['staff_id', 'staff', 'staff'], ['room_id', 'room', 'rooms']]) {
+    const v = body[key];
+    if (v === undefined || v === null || v === '') continue; // absent or explicit clear
+    const n = Number(v);
+    if (!Number.isInteger(n) || n <= 0) {
+      errors.push(`${key} must be a positive integer or null`);
+      continue;
+    }
+    // Active-only: soft-deleted staff/rooms must never be assignable. The UI
+    // and generator only offer active rows; this rejects hand-crafted requests.
+    if (!db.prepare(`SELECT id FROM ${table} WHERE id = ? AND status = 'active'`).get(n)) errors.push(`unknown ${label}_id ${n}`);
+  }
+  return errors;
+}
+
+// PATCH /api/timetable/slots/:id/reassign  { subject?, class_section?, day?,
+// period?, staff_id?, room_id? } — full single-slot editor. Any subset of
+// fields may be sent; staff_id/room_id explicitly null clears them (a slot
+// with no teacher becomes a flagged staffing gap). A full rescan then
+// re-flags the slot + any new peers, clears the old cell's peers, and
+// resolves notifications whose issue is fixed.
 router.patch('/slots/:id/reassign', (req, res) => {
   const id = Number(req.params.id);
   const slot = req.db.prepare(`SELECT * FROM timetable_slots WHERE id = ?`).get(id);
   if (!slot) return res.status(404).json({ error: 'slot not found' });
 
-  const { staff_id, room_id } = req.body || {};
-  const newStaff = staff_id === undefined ? slot.staff_id : staff_id;
-  const newRoom = room_id === undefined ? slot.room_id : room_id;
+  const body = req.body || {};
+  const errors = validateSlotFields(req.db, body);
+  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
 
-  req.db.prepare(`UPDATE timetable_slots SET staff_id = ?, room_id = ? WHERE id = ?`)
-    .run(newStaff, newRoom, id);
+  const next = {
+    day: body.day === undefined ? slot.day : Number(body.day),
+    period: body.period === undefined ? slot.period : Number(body.period),
+    subject: body.subject === undefined ? slot.subject : String(body.subject).trim(),
+    class_section: body.class_section === undefined ? slot.class_section : String(body.class_section).trim(),
+    staff_id: body.staff_id === undefined ? slot.staff_id : (body.staff_id === null || body.staff_id === '' ? null : Number(body.staff_id)),
+    room_id: body.room_id === undefined ? slot.room_id : (body.room_id === null || body.room_id === '' ? null : Number(body.room_id)),
+  };
+
+  req.db.prepare(
+    `UPDATE timetable_slots SET day = ?, period = ?, subject = ?, class_section = ?, staff_id = ?, room_id = ?
+      WHERE id = ?`
+  ).run(next.day, next.period, next.subject, next.class_section, next.staff_id, next.room_id, id);
 
   // Full re-scan: refreshes this slot AND any peer that shared the clash,
   // generates notifications for new conflicts, and resolves notifications
-  // whose underlying issue is now fixed (exact fingerprint matching — no LIKE).
+  // whose underlying issue is now fixed (exact fingerprint matching).
   runScan(req.db);
 
-  // Report the slot's real post-reassign conflict state (if the new room
-  // collides with something else, the caller sees the remaining issues).
+  // A slot moved to a new day/period leaves its OLD-cell clash notification
+  // behind: fingerprints embed day/period, and runScan only reconciles
+  // fingerprints it can reconstruct from live rows. Close exactly that one —
+  // the pre-update `slot` row holds the old position. This must never be a
+  // LIKE prefix: SQL treats `_` as a wildcard, so 'clash_1_%' would also
+  // match OTHER slots' notifications (clash_10_…, clash_11_…).
+  if (slot.day !== next.day || slot.period !== next.period) {
+    req.db.prepare(
+      `UPDATE notifications SET resolved = 1 WHERE type = 'clash' AND resolved = 0 AND fingerprint = ?`
+    ).run(`clash_${id}_${slot.day}_${slot.period}`);
+  }
+
+  // Report the slot's real post-edit conflict state (if the new cell collides
+  // with something else, the caller sees the remaining issues).
   const { issues } = refreshSlotConflict(req.db, id);
 
   const updated = req.db.prepare(`
@@ -148,16 +213,42 @@ router.patch('/slots/:id/reassign', (req, res) => {
   res.json({ ok: true, slot: updated, remaining_issues: issues });
 });
 
+// DELETE /api/timetable/slots/:id — remove a single slot (authed). The slot's
+// own clash/gap notifications are closed (exact fingerprint match — see the
+// PATCH handler for why a LIKE prefix would over-match) and a full rescan
+// un-flags any peer that only conflicted because of this slot.
+router.delete('/slots/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const slot = req.db.prepare(`SELECT id, day, period FROM timetable_slots WHERE id = ?`).get(id);
+  if (!slot) return res.status(404).json({ error: 'slot not found' });
+
+  req.db.prepare(`DELETE FROM timetable_slots WHERE id = ?`).run(id);
+  req.db.prepare(
+    `UPDATE notifications SET resolved = 1 WHERE type = 'clash' AND resolved = 0 AND fingerprint = ?`
+  ).run(`clash_${id}_${slot.day}_${slot.period}`);
+  req.db.prepare(`UPDATE notifications SET resolved = 1 WHERE fingerprint = ?`).run(`staffing_gap_${id}`);
+  runScan(req.db);
+  res.json({ ok: true, deleted: id });
+});
+
 // POST /api/timetable/slots — add a new slot, run conflict detection on it (authed)
 router.post('/slots', (req, res) => {
-  const { day, period, subject, staff_id, room_id, class_section } = req.body || {};
-  if (day == null || period == null || !subject || !class_section) {
+  const body = req.body || {};
+  if (body.day === undefined || body.period === undefined || body.subject === undefined || body.class_section === undefined) {
     return res.status(400).json({ error: 'day, period, subject and class_section are required' });
   }
+  const errors = validateSlotFields(req.db, body);
+  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+
   const info = req.db.prepare(
     `INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section)
      VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(day, period, subject, staff_id ?? null, room_id ?? null, class_section);
+  ).run(
+    Number(body.day), Number(body.period), String(body.subject).trim(),
+    body.staff_id == null || body.staff_id === '' ? null : Number(body.staff_id),
+    body.room_id == null || body.room_id === '' ? null : Number(body.room_id),
+    String(body.class_section).trim()
+  );
 
   // Full scan so the new slot's peers get flagged too, and notifications
   // are generated for every side of any new clash.

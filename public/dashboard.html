@@ -84,6 +84,7 @@
         <h2>Weekly timetable</h2>
         <span class="app-actions" style="gap:0.6rem;">
           <span class="mono" id="ttStatus"></span>
+          <button class="btn btn--small btn--teal" id="addSlotBtn">+ Add slot</button>
           <button class="btn btn--small btn--gold" id="genTtBtn">Generate timetable</button>
         </span>
       </div>
@@ -181,6 +182,21 @@
     </div>
   </section>
 </main>
+
+<!-- Single-slot editor modal (add / edit / delete a timetable slot) -->
+<div class="modal-overlay" id="slotModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="slotModalTitle">
+    <h2 id="slotModalTitle">Edit slot</h2>
+    <p class="mono" style="margin-top:0.4rem;color:var(--ink-muted);" id="slotModalSub">Changes are re-checked by the conflict detector immediately.</p>
+    <div id="slotModalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" type="button" id="slotDelete" hidden>Delete slot</button>
+      <span style="flex:1"></span>
+      <button class="btn btn--ghost" type="button" id="slotCancel">Cancel</button>
+      <button class="btn btn--teal" type="button" id="slotSave">Save</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add/edit modal for the data hub (students / staff / rooms) -->
 <div class="modal-overlay" id="hubModal" hidden>
@@ -445,6 +461,8 @@
         wrap.appendChild(buildTimetable(data, {
           showFix: true,
           onFix: function (slot, roomId) { reassignSlot(slot, roomId); },
+          showEdit: true,
+          onEdit: function (slot) { openSlotModal('edit', slot); },
         }));
         var clashCount = data.slots.filter(function (s) { return s.conflict === 1; }).length;
         var gapCount = data.slots.filter(function (s) { return s.staff_id === null; }).length;
@@ -1032,6 +1050,183 @@
     loadOverview();
     if (currentTab === 'forms') loadStudents();
   }
+
+  /* ---------- single-slot editor (add / edit / delete) ---------- */
+  var slotModal = document.getElementById('slotModal');
+  var slotEditing = null;  // the slot row when editing; null when adding
+  var slotDeleteArmed = false;
+
+  function openSlotModal(mode, slot) {
+    slotEditing = slot;
+    slotDeleteArmed = false;
+    var deleteBtn = document.getElementById('slotDelete');
+    deleteBtn.hidden = mode !== 'edit';
+    deleteBtn.disabled = false;
+    deleteBtn.textContent = 'Delete slot';
+    deleteBtn.classList.remove('btn--danger');
+    document.getElementById('slotModalTitle').textContent = slot ? 'Edit slot' : 'Add slot';
+    // The modal needs the active staff/room lists; the timetable fetch provides them.
+    if (!state.timetable || !state.timetable.staff || !state.timetable.rooms) {
+      apiFetch('/api/timetable')
+        .then(function (data) { state.timetable = data; renderSlotForm(); })
+        .catch(function (err) { errorTop('Could not load timetable data: ' + err.message); });
+      return;
+    }
+    renderSlotForm();
+  }
+
+  function renderSlotForm() {
+    var body = document.getElementById('slotModalBody');
+    body.innerHTML = '';
+    var grid = h('div', 'form-grid');
+    grid.style.gridTemplateColumns = '1fr';
+
+    var mkField = function (label, control, id) {
+      var field = h('div', 'field');
+      var l = h('label', '', label);
+      l.htmlFor = id;
+      field.appendChild(l);
+      control.id = id;
+      field.appendChild(control);
+      return field;
+    };
+
+    var slot = slotEditing;
+    var classInput = h('input', '');
+    classInput.type = 'text';
+    classInput.value = slot ? slot.class_section : '';
+    grid.appendChild(mkField('Class section', classInput, 'slotClass'));
+
+    var subjectInput = h('input', '');
+    subjectInput.type = 'text';
+    subjectInput.value = slot ? slot.subject : '';
+    grid.appendChild(mkField('Subject', subjectInput, 'slotSubject'));
+
+    var daySel = h('select', '');
+    DAYS.slice(0, 5).forEach(function (d, i) {
+      var opt = h('option', '', d);
+      opt.value = i;
+      daySel.appendChild(opt);
+    });
+    daySel.value = String(slot ? slot.day : 0);
+    grid.appendChild(mkField('Day', daySel, 'slotDay'));
+
+    var periodSel = h('select', '');
+    PERIODS.forEach(function (p) {
+      var opt = h('option', '', 'Period ' + p + ' · ' + periodLabel(p));
+      opt.value = p;
+      periodSel.appendChild(opt);
+    });
+    periodSel.value = String(slot ? slot.period : 1);
+    grid.appendChild(mkField('Period', periodSel, 'slotPeriod'));
+
+    var staffSel = h('select', '');
+    var noTeacher = h('option', '', '— no teacher —');
+    noTeacher.value = '';
+    staffSel.appendChild(noTeacher);
+    (state.timetable.staff || []).forEach(function (st) {
+      var opt = h('option', '', st.name + ' · ' + st.subject);
+      opt.value = st.id;
+      staffSel.appendChild(opt);
+    });
+    staffSel.value = slot && slot.staff_id != null ? String(slot.staff_id) : '';
+    grid.appendChild(mkField('Teacher', staffSel, 'slotTeacher'));
+
+    var roomSel = h('select', '');
+    var noRoom = h('option', '', '— no room —');
+    noRoom.value = '';
+    roomSel.appendChild(noRoom);
+    (state.timetable.rooms || []).forEach(function (r) {
+      var opt = h('option', '', r.name + ' · ' + (r.capacity || '') + ' seats');
+      opt.value = r.id;
+      roomSel.appendChild(opt);
+    });
+    roomSel.value = slot && slot.room_id != null ? String(slot.room_id) : '';
+    grid.appendChild(mkField('Room', roomSel, 'slotRoom'));
+
+    body.appendChild(grid);
+    slotModal.hidden = false;
+  }
+
+  function collectSlotBody() {
+    return {
+      class_section: document.getElementById('slotClass').value.trim(),
+      subject: document.getElementById('slotSubject').value.trim(),
+      day: Number(document.getElementById('slotDay').value),
+      period: Number(document.getElementById('slotPeriod').value),
+      staff_id: (function () {
+        var v = document.getElementById('slotTeacher').value;
+        return v === '' ? null : Number(v);
+      })(),
+      room_id: (function () {
+        var v = document.getElementById('slotRoom').value;
+        return v === '' ? null : Number(v);
+      })(),
+    };
+  }
+
+  document.getElementById('slotSave').addEventListener('click', function () {
+    var save = document.getElementById('slotSave');
+    var body = collectSlotBody();
+    if (!body.class_section || !body.subject) {
+      errorTop('Class section and subject are required.');
+      return;
+    }
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    apiFetch(slotEditing ? '/api/timetable/slots/' + slotEditing.id + '/reassign' : '/api/timetable/slots', {
+      method: slotEditing ? 'PATCH' : 'POST',
+      body: body,
+    })
+      .then(function (r) {
+        slotModal.hidden = true;
+        save.disabled = false;
+        save.textContent = 'Save';
+        loadTimetable();
+        loadOverview();
+        if (currentTab === 'notifications') loadAllNotifications();
+        var issues = (r.remaining_issues || r.conflicts) || [];
+        if (issues.length) errorTop('Saved — but this slot now has a conflict. Check the red cells.');
+      })
+      .catch(function (err) {
+        save.disabled = false;
+        save.textContent = 'Save';
+        errorTop('Could not save slot: ' + err.message);
+      });
+  });
+
+  document.getElementById('slotDelete').addEventListener('click', function () {
+    var btn = document.getElementById('slotDelete');
+    if (!slotDeleteArmed) {
+      slotDeleteArmed = true;
+      btn.textContent = 'Confirm delete?';
+      btn.classList.add('btn--danger');
+      setTimeout(function () {
+        slotDeleteArmed = false;
+        btn.textContent = 'Delete slot';
+        btn.classList.remove('btn--danger');
+      }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    apiFetch('/api/timetable/slots/' + slotEditing.id, { method: 'DELETE' })
+      .then(function () {
+        slotModal.hidden = true;
+        loadTimetable();
+        loadOverview();
+        if (currentTab === 'notifications') loadAllNotifications();
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = 'Delete slot';
+        slotDeleteArmed = false;
+        errorTop('Could not delete slot: ' + err.message);
+      });
+  });
+
+  document.getElementById('slotCancel').addEventListener('click', function () { slotModal.hidden = true; });
+  slotModal.addEventListener('click', function (e) { if (e.target === slotModal) slotModal.hidden = true; });
+  document.getElementById('addSlotBtn').addEventListener('click', function () { openSlotModal('add', null); });
 
   /* ---------- boot ---------- */
   loadOverview();
