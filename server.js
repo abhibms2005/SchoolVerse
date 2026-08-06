@@ -126,6 +126,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/forms', require('./routes/forms'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/roster', require('./routes/roster'));
+app.use('/api/payments', require('./routes/payments'));
 app.use('/api/staffing', require('./routes/staffing'));
 
 // 404 JSON for unknown /api routes.

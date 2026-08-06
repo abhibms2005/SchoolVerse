@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS students (
   admission_date   TEXT NOT NULL DEFAULT (date('now')),
   fee_status       TEXT NOT NULL DEFAULT 'pending'
     CHECK (fee_status IN ('paid', 'pending', 'overdue')),
+  expected_fee     REAL NOT NULL DEFAULT 0,   -- 0 = manual fee_status mode; >0 = balance-driven
   status           TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'inactive', 'left'))
 );
@@ -115,6 +116,20 @@ CREATE TABLE IF NOT EXISTS uploaded_forms (
   uploaded_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_forms_status ON uploaded_forms (status);
+
+-- Minimal fee ledger (Day 4): expected_fee per student (flat figure; 0 =
+-- manual fee_status mode) + a payments log. Balance is computed, never
+-- stored, so it can't drift from the payments it's derived from.
+CREATE TABLE IF NOT EXISTS payments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  amount     REAL NOT NULL CHECK (amount > 0),
+  date       TEXT NOT NULL DEFAULT (date('now')),
+  method     TEXT NOT NULL DEFAULT 'manual',
+  note       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_payments_student ON payments (student_id);
 
 CREATE TABLE IF NOT EXISTS notifications (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

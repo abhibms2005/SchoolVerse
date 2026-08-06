@@ -29,6 +29,9 @@ const ADD_COLUMNS = [
   ['notifications', 'student_id', 'INTEGER REFERENCES students(id) ON DELETE SET NULL'],
   ['notifications', 'slot_id', 'INTEGER REFERENCES timetable_slots(id) ON DELETE SET NULL'],
   ['notifications', 'staff_id', 'INTEGER REFERENCES staff(id) ON DELETE SET NULL'],
+  // Fee ledger: expected yearly fee per student. 0 = manual fee_status mode
+  // (the seeded flags stay authoritative); > 0 = balance-driven.
+  ['students', 'expected_fee', 'REAL NOT NULL DEFAULT 0'],
 ];
 
 function ensureColumns(db) {
