@@ -8,6 +8,7 @@
     "dev": "node --watch server.js",
     "db:migrate": "node db/migrate.js",
     "db:seed": "node db/seeds/dev-seed.js",
+    "scan:simulate": "node scripts/simulate-scanner.js",
     "setup": "npm run db:migrate && npm run db:seed",
     "test": "node --test \"tests/**/*.test.js\""
   },
@@ -19,6 +20,8 @@
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.7.0",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
     "multer": "^1.4.5-lts.1"
   }
 }

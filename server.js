@@ -2,6 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { openDb } = require('./src/db');
 const { migrate } = require('./db/migrate');
 const { requireAuth, getSession, hashPassword } = require('./src/auth');
@@ -12,6 +14,27 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();
 const db = openDb();
+
+// Basic security headers (X-Content-Type-Options, X-Frame-Options, HSTS in
+// production, Referrer-Policy, …). Content-Security-Policy is deliberately
+// left off: the pages use inline scripts/styles (no build step) and a strict
+// policy would break the app for no real gain on a single-admin tool.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Behind Render's (and most hosts') proxy, req.ip is the proxy unless Express
+// trusts the first hop — the login rate limiter needs real client IPs.
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
+// Login brute-force guard: 10 attempts/minute per IP. Single-admin scope —
+// a legitimate admin never hits this; it just slows password guessing.
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'Too many sign-in attempts — try again in a minute.' }),
+});
+app.use('/api/auth/login', loginLimiter);
 
 // Attach the db handle to every request so route files stay lean.
 app.use((req, res, next) => { req.db = db; next(); });
@@ -61,6 +84,23 @@ function publicOnly(router) {
 
 app.use('/api/auth', require('./routes/auth'));                    // login public, /me self-guarded
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+// /api/status — public read-only health detail for demos: last background
+// scan, last timetable generation, and the extraction queue counters.
+app.get('/api/status', (req, res) => {
+  const meta = (key) => { const row = req.db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key); return row ? row.value : null; };
+  const ext = { pending: 0, done: 0, failed: 0 };
+  for (const row of req.db.prepare(`SELECT extraction_status, COUNT(*) c FROM uploaded_forms GROUP BY extraction_status`).all()) {
+    if (row.extraction_status in ext) ext[row.extraction_status] = row.c;
+  }
+  res.json({
+    ok: true,
+    uptime_s: Math.round(process.uptime()),
+    last_scan_at: meta('last_scan_at'),
+    last_generation_at: meta('last_generation_at'),
+    extraction_queue: ext,
+    node: process.version,
+  });
+});
 app.use('/api/stats', require('./routes/stats'));
 app.use('/api/timetable', publicOnly(require('./routes/timetable')));
 app.use('/api/notifications', publicOnly(require('./routes/notifications')));
@@ -72,6 +112,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/forms', require('./routes/forms'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/roster', require('./routes/roster'));
+app.use('/api/staffing', require('./routes/staffing'));
 
 // 404 JSON for unknown /api routes.
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
@@ -87,10 +128,10 @@ app.use((err, req, res, next) => {
 });
 
 /* ------------------------------------------------------------------
-   Scheduled background scan (real, but dev-appropriate: a setInterval).
-   In production you'd run this as a cron job instead. Re-scans the
-   timetable for conflicts and generates notifications. Fingerprints
-   dedupe, so re-runs never spam.
+   Scheduled background scan: a setInterval that re-runs the real conflict
+   detector + notification generator every minute (plus once at boot), and
+   records last_scan_at for /api/status. Fingerprints dedupe, so re-runs
+   never spam. The same scan is also triggered by every timetable mutation.
    ------------------------------------------------------------------ */
 const SCAN_INTERVAL_MS = 60 * 1000; // 60s
 function scheduledScan() {
@@ -120,6 +161,13 @@ migrate(db);
      the real values in the host's environment (Render dashboard → Settings
      → Environment).
    ------------------------------------------------------------------ */
+// Production without an explicit SESSION_SECRET falls back to a hardcoded
+// dev-only secret — fine locally, a real problem on a public host. Warn loudly
+// (render.yaml generates one via generateValue, so the blueprint path is safe).
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.warn('[boot] WARNING: SESSION_SECRET is not set — using a hardcoded dev-only secret. Set SESSION_SECRET in production.');
+}
+
 const ADMIN_EMAIL = String(process.env.SEED_ADMIN_EMAIL || '').toLowerCase().trim();
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || '';
 const wantsSeed = process.env.SEED_DEMO_ON_BOOT === 'true';

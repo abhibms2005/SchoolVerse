@@ -50,6 +50,12 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
+      # Google Gemini API key for real document extraction (free tier — get one
+      # at aistudio.google.com/apikey, format AIza…). Same sync: false pattern:
+      # prompted at blueprint creation, never committed. Without it uploads
+      # still work but extraction lands 'failed' for manual review.
+      - key: GEMINI_API_KEY
+        sync: false
       # Where the SQLite file + uploads live. Defaults are a writable path
       # inside the project dir (works on the free tier's ephemeral disk; data
       # is wiped on restart/redeploy/spin-down). With a persistent disk

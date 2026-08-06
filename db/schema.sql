@@ -21,13 +21,50 @@ CREATE TABLE IF NOT EXISTS staff (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   name    TEXT NOT NULL,
   subject TEXT NOT NULL,
-  contact TEXT
+  contact TEXT,
+  status  TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'inactive'))   -- soft-delete flag
 );
 
 CREATE TABLE IF NOT EXISTS rooms (
-  id       INTEGER PRIMARY KEY AUTOINCREMENT,
-  name     TEXT NOT NULL UNIQUE,
-  capacity INTEGER NOT NULL DEFAULT 0
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  name      TEXT NOT NULL UNIQUE,
+  capacity  INTEGER NOT NULL DEFAULT 0,
+  room_type TEXT NOT NULL DEFAULT 'classroom'
+    CHECK (room_type IN ('classroom', 'lab')),
+  status    TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'inactive'))   -- soft-delete flag
+);
+
+-- Timetable generator inputs. class_subject_requirements says how many
+-- periods each class needs of each subject and whether it needs a lab;
+-- staff_subjects says who is qualified to teach what and their weekly cap.
+-- These are plain data tables (seeded in dev, editable in production).
+CREATE TABLE IF NOT EXISTS classes (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS subjects (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS class_subject_requirements (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  class_id         INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  subject_id       INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  periods_per_week INTEGER NOT NULL CHECK (periods_per_week > 0),
+  room_type        TEXT NOT NULL DEFAULT 'classroom'
+    CHECK (room_type IN ('classroom', 'lab')),
+  UNIQUE (class_id, subject_id)
+);
+
+CREATE TABLE IF NOT EXISTS staff_subjects (
+  staff_id             INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+  subject_id           INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  max_periods_per_week INTEGER NOT NULL DEFAULT 25,
+  PRIMARY KEY (staff_id, subject_id)
 );
 
 CREATE TABLE IF NOT EXISTS timetable_slots (
@@ -56,20 +93,24 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     CHECK (status IN ('present', 'absent', 'late')),
   method     TEXT NOT NULL DEFAULT 'manual'
     CHECK (method IN ('manual', 'RFID', 'CV')),
+  room_id    INTEGER REFERENCES rooms(id) ON DELETE SET NULL,  -- scanner location
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance_records (student_id, date);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_records (date);
 
 CREATE TABLE IF NOT EXISTS uploaded_forms (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_id     INTEGER REFERENCES students(id) ON DELETE SET NULL,
-  form_type      TEXT NOT NULL DEFAULT 'admission',
-  file_path      TEXT NOT NULL,
-  extracted_data TEXT,                      -- JSON payload; null until OCR extraction runs
-  status         TEXT NOT NULL DEFAULT 'pending_review'
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id            INTEGER REFERENCES students(id) ON DELETE SET NULL,
+  form_type             TEXT NOT NULL DEFAULT 'admission',
+  file_path             TEXT NOT NULL,
+  extracted_data        TEXT,                      -- JSON payload; null until extraction runs
+  extraction_status     TEXT NOT NULL DEFAULT 'pending'
+    CHECK (extraction_status IN ('pending', 'done', 'failed')),
+  extraction_confidence REAL,                       -- 0..1 from the model; null until done
+  status                TEXT NOT NULL DEFAULT 'pending_review'
     CHECK (status IN ('pending_review', 'verified', 'rejected')),
-  uploaded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  uploaded_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_forms_status ON uploaded_forms (status);
 
@@ -90,4 +131,12 @@ CREATE TABLE IF NOT EXISTS admins (
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Small key/value store for system-level facts surfaced by /api/status
+-- (last background scan time, last timetable generation, …).
+CREATE TABLE IF NOT EXISTS meta (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

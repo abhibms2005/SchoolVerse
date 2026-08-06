@@ -60,11 +60,12 @@ npm test           # unit tests (node:test)
 | `npm run db:migrate` | Apply `db/schema.sql` (idempotent, safe to re-run) |
 | `npm run db:seed` | Load dev sample data (see below) |
 | `npm run setup` | `db:migrate` + `db:seed` in one step |
-| `npm test` | Run the conflict-detector unit tests |
+| `npm test` | Unit tests for every module (node:test, in-memory DB) |
+| `npm run scan:simulate` | Run the simulated attendance hardware client (see *Auto-attendance* below) — needs `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`; `BASE_URL` (default `http://localhost:3000`) and `SCAN_INTERVAL_MS` (default `4000`) are optional |
 
 ### Dev seed data
 
-`npm run db:seed` (or `db/seeds/dev-seed.js`) wipes and repopulates the database with realistic sample rows: 8 rooms, 6 staff, 6 students, a full 5-day timetable with **deliberately seeded conflicts** (a live room clash, an auto-resolved slot, and a staffing gap), 5 days of mixed-method attendance (RFID/CV/manual), 4 uploaded forms (3 pending review), and the admin account.
+`npm run db:seed` (or `db/seeds/dev-seed.js`) wipes and repopulates the database with realistic sample rows: 8 rooms (with lab/classroom types), 6 staff, 6 students, a full 5-day timetable with **deliberately seeded conflicts** (a live room clash, an auto-resolved slot, and a staffing gap), the **timetable generator's input tables** (4 classes, 7 subjects, per-class subject requirements incl. lab needs, staff qualifications + weekly load caps), 5 days of mixed-method attendance (RFID/CV/manual), 4 uploaded forms in the document-extractor schema (3 pending review — one deliberately low-confidence to demo the review path), and the admin account.
 
 > `// dev seed data — do not run in production` — the script refuses to run when `NODE_ENV=production`.
 
@@ -82,6 +83,8 @@ The seed is strictly for local development/demo. It is separated from production
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | *(required when seeding — no default)* | Admin credentials for the seeded account; the seed and `SEED_DEMO_ON_BOOT` boot provisioning refuse to run without them |
 | `SEED_DEMO_ON_BOOT` | *(unset)* | `true` → seed demo data on boot **only when the database is empty** (used for ephemeral hosting — see below) |
 | `UPLOADS_DIR` | `public/uploads` | Where uploaded form files are stored (point at a persistent disk in production) |
+| `GEMINI_API_KEY` | *(unset)* | Free Google AI Studio key for real document extraction (Task: *Document reader*). Without it, uploads still work — extraction is recorded as `failed` and the form lands in the review queue for manual entry, never a crash. Get one at aistudio.google.com/apikey (`AIza…` format) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model used for document extraction (override per deployment; no code change needed — e.g. `gemini-3.6-flash`, the current latest stable Flash) |
 
 ---
 
@@ -156,9 +159,14 @@ src/
   db.js                    better-sqlite3 connection (WAL mode, FK enforcement)
   auth.js                  Signed-cookie sessions (HMAC-SHA256) + bcrypt password hashing
   conflict-detector.js     Real timetable conflict detection (staff/room double-booking)
-  notification-service.js  Generates notifications from real conflicts/pending forms/staffing gaps
+  notification-service.js  Generates notifications from real conflicts/pending forms/low-confidence extractions/staffing gaps
   stats.js                 Real aggregate queries for the stats section
-routes/                    /api/* handlers (auth, stats, timetable, notifications, forms, attendance, roster)
+  document-extractor.js    REAL LLM document extraction (Google Gemini generateContent, images + PDFs)
+  timetable-generator.js   Dependency-free constraint-satisfaction timetable generator (backtracking)
+  staffing-predictor.js    Statistical staffing-heuristic predictions from real attendance history
+routes/                    /api/* handlers (auth, stats, timetable, notifications, forms, attendance, roster, staffing)
+scripts/
+  simulate-scanner.js      Simulated RFID/CV hardware — posts real scans to POST /api/attendance/scan
 public/
   index.html               Landing page (data sections fetch live API)
   dashboard.html           Dashboard app view (post-login product UI)
@@ -166,7 +174,12 @@ public/
   styles.css               Shared token system (navy #14213D, paper #FAF7F0, gold #C9A227, teal #2F6F63)
   app.js                   Shared fetch helpers + skeleton/empty/error state rendering
 tests/
-  conflict-detector.test.js  Unit tests for conflict detection (node:test, in-memory DB)
+  conflict-detector.test.js  Conflict detection (staff/room double-booking, resolution)
+  document-extractor.test.js Real extraction parse/fallback paths (mocked model client)
+  forms.test.js              Upload/verify flow incl. corrected-data merge
+  timetable-generator.test.js Generation constraints + conflict-detector cross-check
+  attendance-scan.test.js    Scan ingestion validation + live-feed source
+  staffing-predictor.test.js Absence-heuristic + structural-gap predictions
 ```
 
 ### API overview
@@ -176,6 +189,7 @@ tests/
 | Method | Endpoint | Notes |
 |---|---|---|
 | GET | `/api/health` | Liveness check |
+| GET | `/api/status` | Demo-friendly detail: uptime, last scan, last generation, extraction queue counters |
 | GET | `/api/stats` | Real aggregates (forms verified, clashes auto-resolved, attendance %, students) |
 | GET | `/api/timetable` | Weekly grid with conflict state |
 | GET | `/api/notifications` | Open attention items |
@@ -187,23 +201,56 @@ tests/
 |---|---|---|
 | GET | `/api/auth/me` | Current admin (self-guarded) |
 | POST | `/api/auth/logout` | Clears session |
-| GET/POST | `/api/forms` | List / upload a form (multipart) — upload → `pending_review` row; actual OCR is a stubbed TODO |
-| PATCH | `/api/forms/:id/verify` | Mark a form verified |
+| GET/POST | `/api/forms` | List / upload a form (multipart) — responds immediately, document extraction runs in the background |
+| PATCH | `/api/forms/:id/verify` | Mark a form verified; optional `corrected_data` becomes the final extraction |
 | PATCH | `/api/forms/:id/reject` | Mark a form rejected |
+| PATCH | `/api/forms/:id/retry-extract` | Re-run extraction for a form stuck in `pending` (process died mid-call) or `failed` — resets the row and re-extracts in the background |
 | POST | `/api/timetable/detect-conflicts` | Run conflict detection |
+| POST | `/api/timetable/generate` | **Regenerate the whole timetable** from real input tables (destructive — see *Timetable generator*) |
 | POST | `/api/timetable/slots` | Add a slot (auto-checks conflicts) |
 | PATCH | `/api/timetable/slots/:id/reassign` | Move a slot; full rescan auto-clears peers + resolves notifications |
 | PATCH | `/api/notifications/:id/resolve` | Resolve an item |
-| GET | `/api/attendance` | Attendance records + method breakdown |
-| GET | `/api/roster` | Students/staff/rooms for the data hub |
+| GET | `/api/attendance/summary` | Attendance records + method breakdown (the live feed source) |
+| POST | `/api/attendance/scan` | Ingest a real scan event `{student_id, method, room_id?, timestamp?}` — the endpoint real hardware hits |
+| GET/POST | `/api/roster/students` · `/api/roster/staff` · `/api/roster/rooms` | List (active by default; `?include_inactive=1` shows soft-deleted) / create |
+| PATCH/DELETE | `/api/roster/students/:id` · `/api/roster/staff/:id` · `/api/roster/rooms/:id` | Edit / **soft delete** (row is flagged `inactive` — timetable slots, attendance and forms keep their references) |
+| GET | `/api/staffing/predictions` | Staffing outlook (heuristic, real data) |
 
 ### How the "proactive" pieces actually work
 
 - **Conflict detection** — `src/conflict-detector.js` checks every slot for the same `staff_id` or `room_id` at the same day+period. Slots are flagged `conflict=1` with a reason; the timetable API renders them as the red clash state. Reassigning a slot triggers a **full rescan**, so a moved slot's peers clear automatically.
-- **Notifications** — `src/notification-service.js` (`runScan`) inspects real state: conflicts, `uploaded_forms` stuck in `pending_review`, and timetable slots with no teacher (staffing gaps). Each gets a `notifications` row with a **fingerprint** so repeated scans never spam duplicates. Runs at boot, every 60s, and after any mutation (detect/reassign/upload).
-- **Dashboard** — the attention queue renders from real `notifications` rows; Approve/Review/Fix buttons call real PATCH endpoints that update the database and re-run the scan.
+- **Notifications** — `src/notification-service.js` (`runScan`) inspects real state: conflicts, `uploaded_forms` stuck in `pending_review` (with a distinct **"low OCR confidence"** variant for extractions below 60%), timetable slots with no teacher (staffing gaps), and the generator's unresolved requirements. Each gets a `notifications` row with a **fingerprint** so repeated scans never spam duplicates. Runs at boot, every 60s, and after any mutation (detect/reassign/upload/extraction).
+- **Document reader** — `src/document-extractor.js` sends the uploaded file (base64 image or PDF) to Google's **Gemini generateContent** endpoint (`gemini-2.5-flash` by default — free tier, no SDK, plain `fetch`) and parses the strict-JSON reply into the extraction schema. The upload responds instantly; extraction updates the row asynchronously and can never crash the server (missing API key, network failure, or malformed JSON all land as a `failed` extraction that stays in the review queue with the error surfaced). The admin reviews the extracted fields in the dashboard and can **edit before verifying** — corrections become the final `extracted_data`. A form left stuck in `pending` (process died mid-call) or `failed` can be re-run with the **Retry extraction** button (`PATCH /api/forms/:id/retry-extract`) — the row resets and the reader tries the document again.
+- **Timetable generator** — `src/timetable-generator.js` is a dependency-free constraint-satisfaction solver (greedy MRV ordering + bounded backtracking) over real input tables: `classes`, `subjects`, `class_subject_requirements` (periods/week + lab vs classroom), `staff_subjects` (qualifications + weekly load caps), and `rooms.room_type`. It can't double-book a teacher, room, or class; anything it genuinely can't place is returned as an **unresolved requirement** and surfaced as a staffing-gap notification. After writing the grid it re-runs the real conflict detector as a belt-and-braces check (zero conflicts by construction, proven at runtime). Manual slot add/reassign still work afterwards.
+- **Auto-attendance** — `POST /api/attendance/scan` writes a real attendance row for `{student_id, method: rfid|cv|manual, room_id?, timestamp?}` with full validation (unknown student/room rejected, method normalised to the schema values). `scripts/simulate-scanner.js` logs in and posts realistic scan events on an interval so the live feed is visibly moving during demos — a physical reader would hit the exact same endpoint.
+- **Staffing outlook** — `src/staffing-predictor.js` is a **clearly-labelled statistical heuristic**: it computes each class's historical absence rate on each weekday from real `attendance_records` and projects the shortfall per timetable slot, and cross-references subjects on the curriculum that no staff member is qualified to teach (the same signal the generator reports as unresolved).
+- **Dashboard** — the attention queue renders from real `notifications` rows; Approve/Review/Fix/Generate buttons call real endpoints that update the database and re-run the scan. The attendance panel is a live feed that re-polls `/api/attendance/summary` every 5s while visible.
 
 ---
+
+## Security hardening
+
+- **Helmet** security headers on every response (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS in production). Content-Security-Policy is intentionally off — the pages use inline scripts (no build step), and a strict policy would break them.
+- **Login rate limiting** — 10 attempts/minute per IP on `POST /api/auth/login` (returns a clear 429). `trust proxy` is enabled in production so the limiter sees real client IPs behind Render's proxy.
+- **Upload validation** — only images (JPEG/PNG/GIF/WebP) and PDFs are accepted (a phone-style generic-mime + known extension is tolerated); anything else gets a 400 with a clear message, and files over **15 MB** are rejected with 413.
+- **`.env.example`** ships in the repo listing every environment variable with placeholder values — no real secrets, and the server/seed still refuse to run with a known default admin password.
+- **Soft-delete roster** — deleting a student/staff/room flags it `inactive` instead of removing the row, so nothing orphans; the timetable, attendance scanner and form dropdown only ever see active entries, and the Data hub offers Restore.
+
+---
+
+## AI components — what is real AI vs classical logic
+
+Honest breakdown for judges:
+
+| Piece | Category | How it works |
+|---|---|---|
+| Document extraction | **Real LLM** | Vision-capable **Google Gemini** model (`generateContent`, `gemini-2.5-flash` by default, override with `GEMINI_MODEL`) reads the uploaded image/PDF and returns strict JSON (`responseMimeType: application/json`). All failures degrade gracefully to `needs_human_review` |
+| Conflict detection | **Deterministic algorithm** | Pure rule-based scan of `timetable_slots` for staff/room double-bookings |
+| Timetable generation | **Deterministic algorithm** | Dependency-free constraint-satisfaction solver (no LLM, no external solver) |
+| Staffing predictions | **Statistical heuristic** | Rolling absence rates over real attendance history + unqualified-subject gaps — deliberately not an ML model |
+| Attendance scans | **Ingestion** | Real rows written by the scan endpoint; the simulator script is demo hardware, the endpoint is the real path |
+
+No displayed number is fabricated: stats, notifications, predictions, extraction results, and the generated timetable are all computed from the live database at request time. The only sample data lives in `db/seeds/dev-seed.js` (dev/demo only, guarded by `NODE_ENV=production`).
 
 ## Testing
 
@@ -211,13 +258,13 @@ tests/
 npm test
 ```
 
-Runs `tests/conflict-detector.test.js` (6 tests) against an in-memory SQLite database covering staff clashes, room clashes, self-conflicts, resolution transitions, and the no-teacher gap.
+Runs the full suite (`node --test "tests/**/*.test.js"`) against in-memory SQLite databases (route handlers are exercised over real HTTP via the shared `tests/helpers.js` harness — the only test double anywhere is a mocked Gemini client, plus stub-server tests that pin the exact Gemini wire format). Coverage: conflict detection (6), document extraction (parse / fence-stripping / fallback paths), forms upload→verify→corrected-data merge + retry-extract (including a full mocked-client success path), timetable generation (constraints + a cross-check that runs the *real* conflict detector over generated output), attendance scan validation, and staffing predictions.
 
 ---
 
 ## Notes for later
 
-- **OCR is stubbed** — the upload flow stores the file and a `pending_review` row, but `extracted_data` for uploads is not yet AI-extracted. Wire a vision model into `routes/forms.js` when ready.
-- **Sessions** are signed cookies (stateless, restart-safe). Swap for real session storage / Passport / roles when multi-admin comes.
+- **Sessions** are signed cookies (stateless, restart-safe). Swap for real session storage / Passport / roles when multi-admin comes. In production the server warns loudly if `SESSION_SECRET` is unset (a hardcoded dev-only secret is used locally).
 - **Postgres migration** — the SQL is portable (only `AUTOINCREMENT`/`datetime('now')`/`?` placeholders are SQLite-flavoured). Swapping `src/db.js` for `pg` is a mechanical change.
-- **Background scan** is a `setInterval` — in production run `runScan` as a cron job instead.
+- **Background scan** is a `setInterval` (every 60s + after every mutation) — for a long-running deployment run `runScan` as a cron job instead. The same scan is recorded in `/api/status` as `last_scan_at`.
+- **Document extraction** calls Google Gemini directly over `fetch` — no SDK dependency. **Free-tier constraint (known, not coded around):** Gemini's free tier rate-limits the Flash models (roughly ~10–15 requests/minute and ~500–1,500 requests/day, resetting at midnight Pacific — exact numbers are per-project in AI Studio → Rate Limits). A live demo does a handful of uploads, so this never bites; just don't run bulk re-extraction loops. If you want batching/retries at scale, move it behind a small queue; for hackathon scope an in-process async call is enough and never blocks the upload response.

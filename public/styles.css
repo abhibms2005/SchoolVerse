@@ -622,6 +622,51 @@ button { font-family: inherit; }
 }
 .field select:focus, .field input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.2); }
 
+/* ---------- Document extraction review (forms tab) ---------- */
+.badge--failed { background: var(--red-soft); color: var(--red); }
+.form-review-row td { background: rgba(20, 33, 61, 0.02); border-bottom: 2px solid var(--line-strong); }
+.form-review { display: grid; gap: 1.1rem; padding: 0.4rem 0.2rem; }
+.review-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; }
+.review-head .mono { color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.12em; }
+.review-note { font-size: 0.85rem; color: var(--ink-muted); }
+.extract-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.9rem; }
+.extract-grid .field input { width: 100%; font-family: var(--sans); font-size: 0.9rem; color: var(--ink); padding: 0.55rem 0.7rem; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+.extract-grid .field input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.2); }
+
+/* ---------- Confirm modal (timetable generation) ---------- */
+.modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(12, 22, 48, 0.55); display: grid; place-items: center; padding: 1.5rem; backdrop-filter: blur(3px); }
+.modal-overlay[hidden] { display: none; }
+.modal { background: var(--paper); border-radius: var(--radius); max-width: 540px; width: 100%; padding: 1.8rem; box-shadow: var(--shadow-3); border-top: 4px solid var(--gold); }
+.modal h2 { font-size: 1.35rem; font-weight: 600; }
+.modal p { color: var(--ink-muted); font-size: 0.95rem; margin-top: 0.6rem; }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.7rem; margin-top: 1.4rem; }
+
+/* ---------- Generation results ---------- */
+.gen-summary { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 1rem; }
+.gen-stat { background: var(--teal-soft); border: 1px solid rgba(47, 111, 99, 0.25); border-radius: var(--radius-sm); padding: 0.7rem 1.1rem; font-family: var(--mono); font-size: 0.72rem; color: var(--teal); }
+.gen-stat b { display: block; font-size: 1.25rem; color: var(--teal); }
+.gen-stat--warn { background: var(--amber-soft); border-color: rgba(201, 162, 39, 0.4); color: #8F6F0E; }
+.gen-stat--warn b { color: #8F6F0E; }
+
+/* ---------- Staffing outlook ---------- */
+.staff-outlook { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+.outlook-item { display: flex; gap: 0.8rem; align-items: flex-start; border: 1px solid var(--line); border-left-width: 4px; border-left-color: var(--gold); border-radius: var(--radius-sm); padding: 0.8rem 1rem; background: rgba(20, 33, 61, 0.02); }
+.outlook-item .num { font-family: var(--mono); font-weight: 700; color: #8F6F0E; background: var(--amber-soft); border-radius: 999px; padding: 0.18rem 0.6rem; font-size: 0.75rem; flex-shrink: 0; }
+.outlook-item p { font-size: 0.86rem; color: var(--ink-muted); margin-top: 0.15rem; }
+.outlook-item b { color: var(--ink); }
+.outlook-item--structural { border-left-color: var(--red); }
+.outlook-item--structural .num { background: var(--red-soft); color: var(--red); }
+
+/* ---------- Live attendance feed ---------- */
+.att-live { display: inline-flex; align-items: center; gap: 0.45rem; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); }
+.att-live .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--teal); animation: live-pulse 1.5s ease-in-out infinite; }
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47, 111, 99, 0.45); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 5px rgba(47, 111, 99, 0); }
+}
+.att-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin-bottom: 0.9rem; }
+.att-toolbar .mono { color: var(--ink-muted); }
+
 /* Notifications list (dashboard) */
 .app-notif-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.8rem; }
 .app-notif {
@@ -700,3 +745,10 @@ button { font-family: inherit; }
   .marquee-group + .marquee-group { display: none; }
   .hero-cue { display: none; }
 }
+
+/* ---------- Data hub (roster CRUD) ---------- */
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.4rem; align-items: start; }
+.btn--danger { background: var(--red); color: #fff; }
+.btn--danger:hover { background: #B83434; box-shadow: 0 12px 24px -12px rgba(201, 52, 52, 0.6); }
+.app-table tr.row-inactive td { opacity: 0.55; }
+.app-table tr.row-inactive td:last-child { opacity: 1; }

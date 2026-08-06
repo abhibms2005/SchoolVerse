@@ -36,6 +36,22 @@ function notifyPendingForms(db) {
       severity: 'warning',
       fingerprint: `pending_form_${form.id}`,
     });
+
+    // Distinct notification for low-confidence / needs-review extractions so
+    // the admin queue surfaces which forms genuinely need eyes on them.
+    let extracted = null;
+    try { extracted = form.extracted_data ? JSON.parse(form.extracted_data) : null; } catch { extracted = null; }
+    const lowConfidence = form.extraction_status === 'done' && extracted
+      && (Number(extracted.confidence) < 0.6 || extracted.needs_human_review === true);
+    if (lowConfidence) {
+      const pct = Math.round((Number(extracted.confidence) || 0) * 100);
+      upsertNotification(db, {
+        type: 'pending_review',
+        message: `${form.form_type} form for ${form.student_name || `student #${form.student_id || '?'}`} needs manual review — low OCR confidence (${pct}%)`,
+        severity: 'warning',
+        fingerprint: `low_conf_form_${form.id}`,
+      });
+    }
   }
 }
 
@@ -52,6 +68,24 @@ function notifyStaffingGaps(db) {
       message: `Staffing gap: ${gap.class_section} ${gap.subject} has no teacher assigned (${gap.room_name || 'no room'})`,
       severity: 'warning',
       fingerprint: `staffing_gap_${gap.id}`,
+    });
+  }
+}
+
+/**
+ * Surface the timetable generator's unresolved requirements as staffing-gap
+ * notifications. Generation-gap fingerprints are managed wholesale by the
+ * generator: each run resolves the previous run's gaps and re-creates the
+ * current ones, so a fixed problem never lingers.
+ */
+function notifyGeneratedGaps(db, unresolved) {
+  db.prepare(`UPDATE notifications SET resolved = 1 WHERE type = 'staffing_gap' AND fingerprint LIKE 'gen_gap_%'`).run();
+  for (const gap of unresolved || []) {
+    upsertNotification(db, {
+      type: 'staffing_gap',
+      message: `Staffing gap (generated): ${gap.class_section} ${gap.subject} — ${gap.reason}`,
+      severity: 'warning',
+      fingerprint: `gen_gap_${gap.class_section}_${gap.subject}`,
     });
   }
 }
@@ -86,6 +120,14 @@ function resolveResolvedIssues(db) {
             FROM uploaded_forms WHERE status != 'pending_review'
         )`
   ).run();
+  db.prepare(
+    `UPDATE notifications SET resolved = 1
+      WHERE type = 'pending_review' AND resolved = 0
+        AND fingerprint IN (
+          SELECT 'low_conf_form_' || id
+            FROM uploaded_forms WHERE status != 'pending_review'
+        )`
+  ).run();
 }
 
 /**
@@ -98,7 +140,11 @@ function runScan(db) {
   notifyPendingForms(db);
   notifyStaffingGaps(db);
   resolveResolvedIssues(db);
+  // Record the scan time for /api/status (meta table is part of the schema).
+  db.prepare(`INSERT INTO meta (key, value) VALUES ('last_scan_at', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`)
+    .run(new Date().toISOString());
   return { clashes: flagged.length };
 }
 
-module.exports = { runScan, upsertNotification, resolveResolvedIssues };
+module.exports = { runScan, upsertNotification, resolveResolvedIssues, notifyGeneratedGaps };

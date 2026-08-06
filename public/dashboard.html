@@ -50,6 +50,7 @@
     <button type="button" role="tab" aria-selected="false" data-tab="timetable">Timetable</button>
     <button type="button" role="tab" aria-selected="false" data-tab="forms">Forms</button>
     <button type="button" role="tab" aria-selected="false" data-tab="notifications">Notifications</button>
+    <button type="button" role="tab" aria-selected="false" data-tab="hub">Data hub</button>
   </nav>
 
   <!-- ============ OVERVIEW ============ -->
@@ -61,9 +62,18 @@
         <div class="app-panel-body" id="overviewNotifs"></div>
       </div>
       <div class="app-panel">
-        <div class="app-panel-head"><h2>Attendance today</h2></div>
+        <div class="app-panel-head">
+          <h2>Attendance today</h2>
+          <span class="att-live"><i class="pulse" aria-hidden="true"></i>live</span>
+        </div>
         <div class="app-panel-body" id="attendancePanel"></div>
       </div>
+    </div>
+
+    <!-- Staffing outlook (real heuristic predictions) -->
+    <div class="app-panel" style="margin-top:1.4rem;">
+      <div class="app-panel-head"><h2>Staffing outlook</h2><span class="mono" style="color:var(--ink-muted);">statistical heuristic · next week</span></div>
+      <div class="app-panel-body" id="staffingPanel"></div>
     </div>
   </section>
 
@@ -72,9 +82,13 @@
     <div class="app-panel">
       <div class="app-panel-head">
         <h2>Weekly timetable</h2>
-        <span class="mono" id="ttStatus"></span>
+        <span class="app-actions" style="gap:0.6rem;">
+          <span class="mono" id="ttStatus"></span>
+          <button class="btn btn--small btn--gold" id="genTtBtn">Generate timetable</button>
+        </span>
       </div>
       <div class="app-panel-body">
+        <div id="genResult"></div>
         <div class="tt-wrap" id="ttWrap"></div>
         <p class="tt-legend" style="margin-top:1.2rem;color:var(--ink-muted);" id="ttLegend">
           <span style="color:var(--ink-muted);"><i class="sw-free" style="border-color:var(--line);"></i>Free period</span>
@@ -95,7 +109,7 @@
           <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload a form">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
             <p>Drop an image or PDF here, or click to browse</p>
-            <small>stored as a pending review record — OCR extraction is next on the roadmap</small>
+            <small>uploaded instantly — the document reader extracts fields in the background</small>
           </div>
           <input type="file" id="fileInput" accept="image/*,application/pdf" style="display:none">
           <div class="form-grid">
@@ -107,9 +121,10 @@
               <label for="formType">Form type</label>
               <select id="formType">
                 <option value="admission">Admission</option>
+                <option value="leave_request">Leave request</option>
                 <option value="fee_receipt">Fee receipt</option>
                 <option value="medical">Medical</option>
-                <option value="transfer_certificate">Transfer certificate</option>
+                <option value="other">Other</option>
               </select>
             </div>
           </div>
@@ -137,7 +152,60 @@
       <div class="app-panel-body" id="notifAll"></div>
     </div>
   </section>
+
+  <!-- ============ DATA HUB ============ -->
+  <section class="tab-panel" id="panel-hub" role="tabpanel" hidden>
+    <p class="mono" style="color:var(--ink-muted);margin-bottom:1rem;">Add, edit or remove roster entries — removal is a soft delete, so timetable slots and records that reference a person/room never break.</p>
+    <div class="hub-grid">
+      <div class="app-panel">
+        <div class="app-panel-head">
+          <h2>Students</h2>
+          <button class="btn btn--small btn--teal" type="button" data-hub-add="students">+ Add student</button>
+        </div>
+        <div class="app-panel-body app-table-wrap" id="hubStudents"></div>
+      </div>
+      <div class="app-panel">
+        <div class="app-panel-head">
+          <h2>Staff</h2>
+          <button class="btn btn--small btn--teal" type="button" data-hub-add="staff">+ Add staff</button>
+        </div>
+        <div class="app-panel-body app-table-wrap" id="hubStaff"></div>
+      </div>
+      <div class="app-panel">
+        <div class="app-panel-head">
+          <h2>Rooms</h2>
+          <button class="btn btn--small btn--teal" type="button" data-hub-add="rooms">+ Add room</button>
+        </div>
+        <div class="app-panel-body app-table-wrap" id="hubRooms"></div>
+      </div>
+    </div>
+  </section>
 </main>
+
+<!-- Add/edit modal for the data hub (students / staff / rooms) -->
+<div class="modal-overlay" id="hubModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
+    <h2 id="hubModalTitle">Add</h2>
+    <div id="hubModalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" type="button" id="hubCancel">Cancel</button>
+      <button class="btn btn--teal" type="button" id="hubSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal for the destructive "Generate timetable" action -->
+<div class="modal-overlay" id="genModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="genModalTitle">
+    <h2 id="genModalTitle">Generate a fresh timetable?</h2>
+    <p>This <strong>wipes the current timetable</strong> and rebuilds it from the generator's inputs — each class's subject requirements, teacher qualifications, room types (lab vs classroom) and weekly load caps. The result is checked by the conflict detector before it's shown.</p>
+    <p style="margin-top:0.8rem;" class="mono" id="genModalMeta"></p>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="genCancel">Cancel</button>
+      <button class="btn btn--teal" id="genConfirm">Generate</button>
+    </div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 <script>
@@ -149,6 +217,7 @@
     stats: null,
     timetable: null,
     students: [],
+    rooms: [],
   };
   var currentTab = 'overview';
 
@@ -173,12 +242,13 @@
       var on = b.dataset.tab === name;
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    ['overview', 'timetable', 'forms', 'notifications'].forEach(function (t) {
+    ['overview', 'timetable', 'forms', 'notifications', 'hub'].forEach(function (t) {
       document.getElementById('panel-' + t).hidden = t !== name;
     });
     if (name === 'timetable') loadTimetable();
     if (name === 'forms') { loadStudents(); loadForms(); }
     if (name === 'notifications') loadAllNotifications();
+    if (name === 'hub') loadHub();
   }
 
   function errorTop(message) {
@@ -192,11 +262,23 @@
     var statsEl = document.getElementById('overviewStats');
     var notifEl = document.getElementById('overviewNotifs');
     var attEl = document.getElementById('attendancePanel');
+    var staffEl = document.getElementById('staffingPanel');
     skeletonCard(statsEl);
+    skeletonCard(staffEl);
 
-    Promise.all([apiFetch('/api/stats'), apiFetch('/api/notifications?limit=5'), apiFetch('/api/attendance/summary')])
+    Promise.all([
+      apiFetch('/api/stats'),
+      apiFetch('/api/notifications?limit=5'),
+      apiFetch('/api/attendance/summary'),
+      apiFetch('/api/staffing/predictions?limit=5'),
+      apiFetch('/api/roster/students'),
+      apiFetch('/api/roster/rooms'),
+    ])
       .then(function (results) {
         var stats = results[0], notifs = results[1].notifications || [], att = results[2];
+        var predictions = results[3].predictions || [];
+        state.students = results[4].students || [];
+        state.rooms = results[5].rooms || [];
         state.stats = stats;
         document.getElementById('appSub').textContent =
           stats.students + ' students · ' + stats.staff + ' staff · ' + stats.rooms + ' rooms';
@@ -229,6 +311,7 @@
         }
 
         renderAttendance(att, attEl);
+        renderStaffing(predictions, staffEl);
       })
       .catch(function (err) {
         errorState(statsEl, { message: err.message, onRetry: loadOverview });
@@ -238,14 +321,50 @@
       });
   }
 
+  /* ---------- staffing outlook ---------- */
+  function renderStaffing(predictions, container) {
+    container.innerHTML = '';
+    if (!predictions.length) {
+      emptyState(container, {
+        title: 'No gaps predicted',
+        hint: 'Predictions appear once there is timetable + attendance history to reason over.',
+      });
+      return;
+    }
+    var list = h('ul', 'staff-outlook');
+    predictions.forEach(function (p) {
+      var li = h('li', 'outlook-item' + (p.day === null ? ' outlook-item--structural' : ''));
+      var num = h('span', 'num', '~' + p.predicted_shortfall);
+      num.title = 'predicted student shortfall';
+      li.appendChild(num);
+      var body = h('div', '');
+      var head = h('p', '');
+      var title = h('b', '', p.day === null ? p.class_section + ' ' + p.subject : p.class_section + ' ' + p.subject + ' · ' + DAYS[p.day] + ' P' + p.period);
+      head.appendChild(title);
+      body.appendChild(head);
+      body.appendChild(h('p', '', p.reason));
+      li.appendChild(body);
+      list.appendChild(li);
+    });
+    container.appendChild(list);
+  }
+
+  /* ---------- attendance (live feed + simulate scan) ---------- */
   function renderAttendance(att, container) {
     container.innerHTML = '';
     var byMethod = {};
     (att.by_method || []).forEach(function (m) { byMethod[m.method] = m.c; });
     var total = att.total || 0;
 
-    var summary = h('div', '');
-    summary.appendChild(h('p', '', 'Total records: ' + total));
+    var toolbar = h('div', 'att-toolbar');
+    var info = h('span', 'mono', total + ' records today');
+    var simulate = h('button', 'btn btn--small btn--teal', 'Simulate a scan');
+    simulate.title = 'Posts a real event to POST /api/attendance/scan — the same endpoint a physical reader uses';
+    simulate.addEventListener('click', simulateScan);
+    toolbar.appendChild(info);
+    toolbar.appendChild(simulate);
+    container.appendChild(toolbar);
+
     var bars = h('div', 'mock-chart', '');
     var barRow = h('div', 'bars', '');
     [['manual', byMethod.manual || 0, 'var(--navy)'], ['RFID', byMethod.RFID || 0, 'var(--gold)'], ['CV', byMethod.CV || 0, 'var(--teal)']].forEach(function (b) {
@@ -262,11 +381,11 @@
 
     var ul = h('ul', 'app-notif-list', '');
     ul.style.marginTop = '1rem';
-    (att.today_rows || []).slice(0, 6).forEach(function (r) {
+    (att.today_rows || []).slice(0, 8).forEach(function (r) {
       var li = h('li', 'app-notif app-notif--' + (r.status === 'absent' ? 'urgent' : 'ok'));
       var body = h('div', 'app-notif-body');
       body.appendChild(h('h3', '', r.student_name + ' · ' + r.class));
-      body.appendChild(h('p', '', r.status + ' — via ' + r.method));
+      body.appendChild(h('p', '', r.status + ' — via ' + r.method + (r.room_id ? '' : ' · no room logged')));
       li.appendChild(body);
       ul.appendChild(li);
     });
@@ -277,6 +396,38 @@
     }
   }
 
+  function simulateScan() {
+    if (!state.students.length || !state.rooms.length) return;
+    var student = state.students[Math.floor(Math.random() * state.students.length)];
+    var room = state.rooms[Math.floor(Math.random() * state.rooms.length)];
+    var method = ['rfid', 'rfid', 'cv', 'manual'][Math.floor(Math.random() * 4)];
+    apiFetch('/api/attendance/scan', {
+      method: 'POST',
+      body: {
+        student_id: student.id,
+        method: method,
+        room_id: room.id,
+        timestamp: new Date().toISOString(),
+      },
+    })
+      .then(function () {
+        refreshAttendancePanel();
+        loadOverview();
+      })
+      .catch(function (err) { errorTop('Scan failed: ' + err.message); });
+  }
+
+  function refreshAttendancePanel() {
+    apiFetch('/api/attendance/summary')
+      .then(function (att) { renderAttendance(att, document.getElementById('attendancePanel')); })
+      .catch(function () { /* poll quietly; the panel re-renders on loadOverview */ });
+  }
+
+  // Live feed: refresh the attendance panel every 5s while the overview is visible.
+  setInterval(function () {
+    if (currentTab === 'overview') refreshAttendancePanel();
+  }, 5000);
+
   /* ---------- timetable ---------- */
   function loadTimetable() {
     var wrap = document.getElementById('ttWrap');
@@ -286,7 +437,7 @@
       .then(function (data) {
         state.timetable = data;
         if (!data.slots || data.slots.length === 0) {
-          emptyState(wrap, { title: 'No timetable yet', hint: 'Add slots to get started. The conflict detector watches every new slot.' });
+          emptyState(wrap, { title: 'No timetable yet', hint: 'Add slots or generate one — the conflict detector watches every new slot.' });
           status.textContent = '';
           return;
         }
@@ -310,6 +461,61 @@
         rescan();
       })
       .catch(function (err) { errorTop('Could not reassign: ' + err.message); });
+  }
+
+  /* ---------- generate timetable (destructive, confirm modal) ---------- */
+  var genBtn = document.getElementById('genTtBtn');
+  var genModal = document.getElementById('genModal');
+  genBtn.addEventListener('click', function () {
+    document.getElementById('genModalMeta').textContent = 'Inputs: classes + subject requirements + staff qualifications + room types';
+    genModal.hidden = false;
+  });
+  document.getElementById('genCancel').addEventListener('click', function () { genModal.hidden = true; });
+  genModal.addEventListener('click', function (e) { if (e.target === genModal) genModal.hidden = true; });
+  document.getElementById('genConfirm').addEventListener('click', function () {
+    var btn = document.getElementById('genConfirm');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    apiFetch('/api/timetable/generate', { method: 'POST', body: { periodsPerDay: 6, daysPerWeek: 5 } })
+      .then(function (r) {
+        genModal.hidden = true;
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+        showGenResult(r.summary, r.unresolved || []);
+        loadTimetable();
+        loadOverview();
+        if (currentTab === 'notifications') loadAllNotifications();
+      })
+      .catch(function (err) {
+        genModal.hidden = true;
+        btn.disabled = false;
+        btn.textContent = 'Generate';
+        errorTop('Generation failed: ' + err.message);
+      });
+  });
+
+  function showGenResult(summary, unresolved) {
+    var box = document.getElementById('genResult');
+    box.innerHTML = '';
+    var wrap = h('div', 'gen-summary');
+    [['Slots placed', summary.slots_placed], ['Unresolved', summary.unresolved], ['Conflicts', summary.conflicts]].forEach(function (s) {
+      var stat = h('div', 'gen-stat');
+      stat.appendChild(h('b', '', String(s[1])));
+      stat.appendChild(h('span', '', s[0]));
+      wrap.appendChild(stat);
+    });
+    box.appendChild(wrap);
+    var note = h('p', 'mono', 'Verified conflict-free by the conflict detector ✓');
+    note.style.marginTop = '0.6rem';
+    note.style.color = 'var(--teal)';
+    box.appendChild(note);
+    if (unresolved.length) {
+      var gap = h('p', '', unresolved.length + ' requirement(s) could not be scheduled — surfaced as staffing-gap notifications.');
+      gap.style.marginTop = '0.5rem';
+      gap.style.color = 'var(--ink-muted)';
+      gap.style.fontSize = '0.9rem';
+      box.appendChild(gap);
+    }
   }
 
   /* ---------- conflict rescan ---------- */
@@ -368,6 +574,10 @@
       .then(function (data) {
         state.students = data.students || [];
         var sel = document.getElementById('formStudent');
+        sel.innerHTML = ''; // rebuild — avoids duplicate options on repeat loads
+        var placeholder = h('option', '', '— no student linked —');
+        placeholder.value = '';
+        sel.appendChild(placeholder);
         state.students.forEach(function (s) {
           var opt = h('option', '', s.name + ' · ' + s.class);
           opt.value = s.id;
@@ -375,6 +585,15 @@
         });
       })
       .catch(function () { /* non-fatal */ });
+  }
+
+  function confidenceBadge(f) {
+    if (f.extraction_status === 'failed') return h('span', 'badge badge--failed', 'Extraction failed');
+    if (f.extraction_status !== 'done') return h('span', 'badge badge--warning', 'Extracting…');
+    if (f.extraction_confidence == null) return h('span', 'badge badge--muted', 'Extracted');
+    var pct = Math.round(f.extraction_confidence * 100);
+    var cls = f.extraction_confidence >= 0.8 ? 'badge--ok' : f.extraction_confidence >= 0.6 ? 'badge--warning' : 'badge--urgent';
+    return h('span', 'badge ' + cls, pct + '%');
   }
 
   function loadForms() {
@@ -392,7 +611,7 @@
         var table = h('table', 'app-table');
         var thead = h('thead');
         var hr = h('tr');
-        ['Student', 'Type', 'Status', 'Uploaded', ''].forEach(function (t) { hr.appendChild(h('th', '', t)); });
+        ['Student', 'Type', 'Status', 'Extraction', 'Uploaded', ''].forEach(function (t) { hr.appendChild(h('th', '', t)); });
         thead.appendChild(hr);
         table.appendChild(thead);
         var tbody = h('tbody');
@@ -404,23 +623,22 @@
           var badge = h('span', 'badge ' + (f.status === 'verified' ? 'badge--ok' : f.status === 'rejected' ? 'badge--muted' : 'badge--warning'), f.status.replace('_', ' '));
           statusTd.appendChild(badge);
           tr.appendChild(statusTd);
+          var confTd = h('td', '');
+          confTd.appendChild(confidenceBadge(f));
+          tr.appendChild(confTd);
           tr.appendChild(h('td', 'num', timeAgo(f.uploaded_at)));
           var act = h('td', '');
           if (f.status === 'pending_review') {
             var wrap = h('div', 'actions');
-            var v = h('button', 'btn btn--small btn--teal', 'Verify');
-            v.addEventListener('click', function () {
-              apiFetch('/api/forms/' + f.id + '/verify', { method: 'PATCH' })
-                .then(function () { loadForms(); loadOverview(); })
-                .catch(function (err) { errorTop(err.message); });
-            });
-            var r = h('button', 'btn btn--small btn--ghost', 'Reject');
-            r.addEventListener('click', function () {
+            var rv = h('button', 'btn btn--small btn--teal', 'Review');
+            rv.addEventListener('click', function () { toggleReview(tr, f); });
+            var rj = h('button', 'btn btn--small btn--ghost', 'Reject');
+            rj.addEventListener('click', function () {
               apiFetch('/api/forms/' + f.id + '/reject', { method: 'PATCH' })
                 .then(function () { loadForms(); })
                 .catch(function (err) { errorTop(err.message); });
             });
-            wrap.appendChild(v); wrap.appendChild(r);
+            wrap.appendChild(rv); wrap.appendChild(rj);
             act.appendChild(wrap);
           }
           tr.appendChild(act);
@@ -431,6 +649,133 @@
         container.appendChild(table);
       })
       .catch(function (err) { errorState(container, { message: err.message, onRetry: loadForms }); });
+  }
+
+  var reviewRows = {}; // formId -> expanded <tr> element
+
+  // Toggle the inline "edit before verifying" panel under a pending form.
+  function toggleReview(tr, f) {
+    if (reviewRows[f.id]) {
+      reviewRows[f.id].remove();
+      delete reviewRows[f.id];
+      return;
+    }
+    var row = buildReviewRow(f);
+    reviewRows[f.id] = row;
+    tr.after(row);
+  }
+
+  function parseExtraction(f) {
+    try { return f.extracted_data ? JSON.parse(f.extracted_data) : null; } catch { return null; }
+  }
+
+  function buildReviewRow(f) {
+    var extracted = parseExtraction(f);
+    var tr = h('tr', 'form-review-row');
+    var td = h('td');
+    td.colSpan = 6;
+
+    var box = h('div', 'form-review');
+
+    // Header: extraction state + confidence + error note.
+    var head = h('div', 'review-head');
+    head.appendChild(h('span', 'mono', 'Document extraction'));
+    head.appendChild(confidenceBadge(f));
+    if (extracted && extracted.needs_human_review && extracted.confidence < 0.6) {
+      head.appendChild(h('span', 'badge badge--urgent', 'Manual review advised'));
+    }
+    // Re-run extraction for stuck ('pending' — process died mid-call) or
+    // failed rows; resets to 'pending' and the reader tries the document again.
+    // A duplicate retry on a genuinely in-flight row is harmless — the server
+    // guard makes it a no-op once extraction lands.
+    if (f.extraction_status === 'failed' || f.extraction_status === 'pending') {
+      var retry = h('button', 'btn btn--small btn--ghost', 'Retry extraction');
+      retry.addEventListener('click', function () {
+        retry.disabled = true;
+        retry.textContent = 'Retrying…';
+        apiFetch('/api/forms/' + f.id + '/retry-extract', { method: 'PATCH' })
+          .then(function () { loadForms(); })
+          .catch(function (err) {
+            retry.disabled = false;
+            retry.textContent = 'Retry extraction';
+            errorTop('Retry failed: ' + err.message);
+          });
+      });
+      head.appendChild(retry);
+    }
+    box.appendChild(head);
+
+    if (f.extraction_status === 'failed') {
+      var errNote = h('p', 'review-note', 'Extraction failed' + (extracted && extracted.extraction_error ? ' — ' + extracted.extraction_error : '') + '. Enter the details below manually and verify.');
+      box.appendChild(errNote);
+    }
+
+    // Editable fields — pre-filled from the model output when available.
+    var grid = h('div', 'extract-grid');
+    var mkField = function (label, value, key) {
+      var field = h('div', 'field');
+      var l = h('label', '', label);
+      l.htmlFor = 'ext-' + f.id + '-' + key;
+      var input = h('input', '');
+      input.type = 'text';
+      input.id = 'ext-' + f.id + '-' + key;
+      input.value = value == null ? '' : String(value);
+      field.appendChild(l);
+      field.appendChild(input);
+      return field;
+    };
+    grid.appendChild(mkField('Student name', extracted ? extracted.student_name : '', 'name'));
+    grid.appendChild(mkField('Student ID', extracted ? extracted.student_id : '', 'sid'));
+    grid.appendChild(mkField('Date', extracted ? extracted.date : '', 'date'));
+
+    // The model's free-form key/value fields, each editable. Input ids are
+    // positional (field-0, field-1…) so two different keys can never collide.
+    var fieldKeys = extracted && extracted.fields && typeof extracted.fields === 'object'
+      ? Object.keys(extracted.fields) : [];
+    fieldKeys.forEach(function (key, i) {
+      grid.appendChild(mkField(key.charAt(0).toUpperCase() + key.slice(1), extracted.fields[key], 'field-' + i));
+    });
+    if (fieldKeys.length === 0 && extracted && !extracted.needs_human_review) {
+      grid.appendChild(h('p', 'review-note', 'No fields extracted — add any details below.'));
+    }
+    box.appendChild(grid);
+
+    // Actions: Verify (sends corrections) / Cancel (close panel).
+    var actions = h('div', 'modal-actions');
+    var cancel = h('button', 'btn btn--ghost', 'Cancel');
+    cancel.addEventListener('click', function () { tr.remove(); delete reviewRows[f.id]; });
+    var verify = h('button', 'btn btn--teal', 'Verify with these details');
+    verify.addEventListener('click', function () {
+      var corrected = {
+        form_type: extracted && extracted.form_type ? extracted.form_type : f.form_type,
+        student_name: document.getElementById('ext-' + f.id + '-name').value || null,
+        student_id: document.getElementById('ext-' + f.id + '-sid').value || null,
+        date: document.getElementById('ext-' + f.id + '-date').value || null,
+        fields: {},
+        confidence: extracted && extracted.confidence != null ? extracted.confidence : null,
+        needs_human_review: false,
+      };
+      fieldKeys.forEach(function (key, i) {
+        var el = document.getElementById('ext-' + f.id + '-field-' + i);
+        if (el && el.value) corrected.fields[key] = el.value;
+      });
+      verify.disabled = true;
+      verify.textContent = 'Verifying…';
+      apiFetch('/api/forms/' + f.id + '/verify', { method: 'PATCH', body: { corrected_data: corrected } })
+        .then(function () { loadForms(); loadOverview(); })
+        .catch(function (err) {
+          verify.disabled = false;
+          verify.textContent = 'Verify with these details';
+          errorTop(err.message);
+        });
+    });
+    actions.appendChild(cancel);
+    actions.appendChild(verify);
+    box.appendChild(actions);
+
+    td.appendChild(box);
+    tr.appendChild(td);
+    return tr;
   }
 
   /* ---------- upload ---------- */
@@ -461,13 +806,16 @@
       .then(function (r) {
         var box = document.getElementById('uploadResult');
         box.innerHTML = '';
-        box.appendChild(h('p', 'mono', 'Uploaded — record #' + r.form.id + ' queued for review.'));
+        box.appendChild(h('p', 'mono', 'Uploaded — record #' + r.form.id + ' queued. Document extraction is running in the background; the queue refreshes with the result.'));
         uploadBtn.textContent = 'Upload form';
         fileInput.value = '';
         selectedFile = null;
         uploadZone.querySelector('p').textContent = 'Drop an image or PDF here, or click to browse';
         loadForms();
         loadOverview();
+        // Poll a couple of times so the extraction result lands in the queue.
+        setTimeout(function () { loadForms(); }, 2500);
+        setTimeout(function () { loadForms(); }, 7000);
       })
       .catch(function (err) {
         uploadBtn.textContent = 'Upload form';
@@ -477,8 +825,6 @@
   });
 
   /* ---------- in-page "go to tab" anchors ---------- */
-  // Links like #forms-tab / #notifications-tab switch the active tab
-  // instead of doing nothing (the panels are JS-driven, not hash-anchored).
   window.addEventListener('hashchange', onHash);
   function onHash() {
     var h = window.location.hash;
@@ -486,6 +832,206 @@
     else if (h === '#notifications-tab') switchTab('notifications');
   }
   if (window.location.hash) onHash();
+
+  /* ---------- data hub (roster CRUD) ---------- */
+  var HUB_COLS = {
+    students: [['name', 'Name'], ['class', 'Class'], ['guardian_contact', 'Guardian']],
+    staff: [['name', 'Name'], ['subject', 'Subject'], ['contact', 'Contact']],
+    rooms: [['name', 'Name'], ['room_type', 'Type'], ['capacity', 'Capacity']],
+  };
+  var HUB_FIELDS = {
+    students: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'class', label: 'Class', type: 'text', required: true },
+      { key: 'section', label: 'Section', type: 'text' },
+      { key: 'guardian_contact', label: 'Guardian contact', type: 'text' },
+    ],
+    staff: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'contact', label: 'Contact', type: 'text' },
+    ],
+    rooms: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'capacity', label: 'Capacity', type: 'number' },
+      { key: 'room_type', label: 'Type', type: 'select', options: [['classroom', 'Classroom'], ['lab', 'Lab']] },
+    ],
+  };
+  var hubEdit = null; // { entity, row } while the modal is open
+
+  function loadHub() {
+    var containers = { students: 'hubStudents', staff: 'hubStaff', rooms: 'hubRooms' };
+    Object.keys(containers).forEach(function (k) { skeletonCard(document.getElementById(containers[k])); });
+    Promise.all([
+      apiFetch('/api/roster/students?include_inactive=1'),
+      apiFetch('/api/roster/staff?include_inactive=1'),
+      apiFetch('/api/roster/rooms?include_inactive=1'),
+    ])
+      .then(function (results) {
+        renderHub('students', results[0].students || [], document.getElementById('hubStudents'));
+        renderHub('staff', results[1].staff || [], document.getElementById('hubStaff'));
+        renderHub('rooms', results[2].rooms || [], document.getElementById('hubRooms'));
+      })
+      .catch(function (err) {
+        Object.keys(containers).forEach(function (k) {
+          errorState(document.getElementById(containers[k]), { message: err.message, onRetry: loadHub });
+        });
+      });
+  }
+
+  function renderHub(entity, rows, container) {
+    container.innerHTML = '';
+    if (!rows.length) {
+      emptyState(container, { title: 'No ' + entity + ' yet', hint: 'Add your first ' + entity + ' with the button above.' });
+      return;
+    }
+    var table = h('table', 'app-table');
+    var thead = h('thead');
+    var hr = h('tr');
+    HUB_COLS[entity].forEach(function (c) { hr.appendChild(h('th', '', c[1])); });
+    hr.appendChild(h('th', '', 'Status'));
+    hr.appendChild(h('th', '', ''));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    var tbody = h('tbody');
+    rows.forEach(function (r) {
+      var tr = h('tr');
+      if (r.status === 'inactive') tr.classList.add('row-inactive');
+      HUB_COLS[entity].forEach(function (c) {
+        var td = h('td', c[0] === 'capacity' || c[0] === 'room_type' ? 'num' : '', r[c[0]] == null ? '—' : String(r[c[0]]));
+        tr.appendChild(td);
+      });
+      var statusTd = h('td', '');
+      statusTd.appendChild(h('span', 'badge ' + (r.status === 'active' ? 'badge--ok' : 'badge--muted'), r.status));
+      tr.appendChild(statusTd);
+      var act = h('td', '');
+      var wrap = h('div', 'actions');
+      var edit = h('button', 'btn btn--small btn--ghost', 'Edit');
+      edit.addEventListener('click', function () { openHubModal(entity, r); });
+      wrap.appendChild(edit);
+      if (r.status === 'active') {
+        var remove = h('button', 'btn btn--small btn--danger', 'Remove');
+        remove.addEventListener('click', function () { confirmHubRemove(entity, r, remove); });
+        wrap.appendChild(remove);
+      } else {
+        var restore = h('button', 'btn btn--small btn--teal', 'Restore');
+        restore.addEventListener('click', function () {
+          apiFetch('/api/roster/' + entity + '/' + r.id, { method: 'PATCH', body: { status: 'active' } })
+            .then(function () { loadHub(); refreshAfterHubChange(); })
+            .catch(function (err) { errorTop(err.message); });
+        });
+        wrap.appendChild(restore);
+      }
+      act.appendChild(wrap);
+      tr.appendChild(act);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
+  // Inline two-step remove: first click arms "Confirm?", second click deletes
+  // (soft — the row just becomes inactive). No modal needed for a single row.
+  function confirmHubRemove(entity, r, btn) {
+    var original = btn.textContent;
+    btn.textContent = 'Confirm?';
+    var timer = setTimeout(function () {
+      btn.textContent = original;
+      btn.onclick = function () { confirmHubRemove(entity, r, btn); };
+    }, 4000);
+    btn.onclick = function () {
+      clearTimeout(timer);
+      apiFetch('/api/roster/' + entity + '/' + r.id, { method: 'DELETE' })
+        .then(function () { loadHub(); refreshAfterHubChange(); })
+        .catch(function (err) { btn.textContent = original; errorTop(err.message); });
+    };
+  }
+
+  function openHubModal(entity, row) {
+    hubEdit = { entity: entity, row: row };
+    document.getElementById('hubModalTitle').textContent = (row ? 'Edit ' : 'Add ') + entity.slice(0, -1);
+    var body = document.getElementById('hubModalBody');
+    body.innerHTML = '';
+    var grid = h('div', 'form-grid');
+    grid.style.gridTemplateColumns = '1fr';
+    HUB_FIELDS[entity].forEach(function (f) {
+      var field = h('div', 'field');
+      var input;
+      if (f.type === 'select') {
+        input = h('select', '');
+        f.options.forEach(function (o) {
+          var opt = h('option', '', o[1]);
+          opt.value = o[0];
+          input.appendChild(opt);
+        });
+      } else {
+        input = h('input', '');
+        input.type = f.type;
+      }
+      input.id = 'hub-' + entity + '-' + f.key;
+      input.required = !!f.required;
+      if (row) input.value = row[f.key] == null ? '' : String(row[f.key]);
+      else if (f.key === 'room_type') input.value = 'classroom';
+      var label = h('label', '', f.label + (f.required ? ' *' : ''));
+      label.htmlFor = input.id;
+      field.appendChild(label);
+      field.appendChild(input);
+      grid.appendChild(field);
+    });
+    body.appendChild(grid);
+    document.getElementById('hubModal').hidden = false;
+  }
+
+  document.getElementById('hubCancel').addEventListener('click', function () {
+    document.getElementById('hubModal').hidden = true;
+  });
+  document.getElementById('hubModal').addEventListener('click', function (e) {
+    if (e.target === this) this.hidden = true;
+  });
+  document.getElementById('hubSave').addEventListener('click', function () {
+    var save = document.getElementById('hubSave');
+    var entity = hubEdit.entity;
+    var body = {};
+    var missing = null;
+    HUB_FIELDS[entity].forEach(function (f) {
+      var el = document.getElementById('hub-' + entity + '-' + f.key);
+      var v = el.value;
+      if (f.required && !v.trim()) { missing = f.label; return; }
+      if (f.type === 'number') { if (v !== '') body[f.key] = Number(v); }
+      else if (v !== '') body[f.key] = v.trim();
+    });
+    if (missing) { errorTop('Please fill in the required field: ' + missing); return; }
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    apiFetch('/api/roster/' + entity + (hubEdit.row ? '/' + hubEdit.row.id : ''), {
+      method: hubEdit.row ? 'PATCH' : 'POST',
+      body: body,
+    })
+      .then(function () {
+        document.getElementById('hubModal').hidden = true;
+        save.disabled = false;
+        save.textContent = 'Save';
+        loadHub();
+        refreshAfterHubChange();
+      })
+      .catch(function (err) {
+        save.disabled = false;
+        save.textContent = 'Save';
+        errorTop(err.message);
+      });
+  });
+
+  document.querySelectorAll('[data-hub-add]').forEach(function (btn) {
+    btn.addEventListener('click', function () { openHubModal(btn.dataset.hubAdd, null); });
+  });
+
+  // After any roster mutation: the overview stat card + simulate-scan pick
+  // from state.students/state.rooms, and the upload form's student dropdown
+  // reads the same list — refresh all of them from the database.
+  function refreshAfterHubChange() {
+    loadOverview();
+    if (currentTab === 'forms') loadStudents();
+  }
 
   /* ---------- boot ---------- */
   loadOverview();

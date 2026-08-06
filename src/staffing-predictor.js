@@ -1,0 +1,90 @@
+'use strict';
+// Staffing prediction — a clearly-labelled STATISTICAL HEURISTIC, not an ML
+// model. For each timetable slot it computes the historical absence rate of
+// that class on that weekday from real attendance_records, then estimates how
+// many students would be absent (predicted shortfall). It also surfaces
+// structural gaps: subjects on the curriculum that no staff member is
+// qualified to teach (the same signal the timetable generator reports).
+//
+// Everything is computed from the live database at request time.
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * @param {object} db
+ * @param {number} [limit] max predictions to return (default 10)
+ * @returns {Array<{day:number|null, period:number|null, subject:string,
+ *   class_section:string, predicted_shortfall:number, reason:string}>}
+ */
+function predictStaffing(db, limit = 10) {
+  const predictions = [];
+
+  // 1) Absence-history predictions: one per timetable slot with a teacher.
+  const slots = db.prepare(
+    `SELECT ts.day, ts.period, ts.subject, ts.class_section
+       FROM timetable_slots ts
+      WHERE ts.staff_id IS NOT NULL
+      ORDER BY ts.day, ts.period`
+  ).all();
+
+  for (const slot of slots) {
+    const { c: classSize } = db.prepare(
+      `SELECT COUNT(*) c FROM students WHERE class = ? AND status = 'active'`
+    ).get(slot.class_section);
+    if (!classSize) continue;
+
+    // strftime('%w') is Sunday=0 … Saturday=6; the timetable uses Mon=0, so
+    // ((%w + 6) % 7) maps weekdays onto the grid's day numbers.
+    const hist = db.prepare(`
+      SELECT COUNT(*) total,
+             SUM(CASE WHEN ar.status != 'present' THEN 1 ELSE 0 END) absent
+        FROM attendance_records ar
+        JOIN students s ON s.id = ar.student_id
+       WHERE s.class = ? AND ((strftime('%w', ar.date) + 6) % 7) = ?`).get(slot.class_section, slot.day);
+    if (!hist.total) continue;
+
+    const rate = hist.absent / hist.total;
+    const shortfall = Math.round(classSize * rate);
+    if (shortfall <= 0) continue;
+
+    predictions.push({
+      day: slot.day,
+      period: slot.period,
+      subject: slot.subject,
+      class_section: slot.class_section,
+      predicted_shortfall: shortfall,
+      reason: `historical absence for ${slot.class_section} on ${DAY_NAMES[slot.day]} is ${(rate * 100).toFixed(1)}% (${hist.absent}/${hist.total} records)`,
+    });
+  }
+
+  // 2) Structural gaps: curriculum subjects no staff member can teach. These
+  //    are the same requirements the timetable generator leaves unresolved.
+  const gaps = db.prepare(`
+    SELECT c.name AS class_section, s.name AS subject
+      FROM class_subject_requirements cr
+      JOIN classes c ON c.id = cr.class_id
+      JOIN subjects s ON s.id = cr.subject_id
+      LEFT JOIN staff_subjects ss ON ss.subject_id = cr.subject_id
+     WHERE ss.staff_id IS NULL
+     ORDER BY c.name, s.name`).all();
+
+  for (const gap of gaps) {
+    const { c: classSize } = db.prepare(
+      `SELECT COUNT(*) c FROM students WHERE class = ? AND status = 'active'`
+    ).get(gap.class_section);
+    if (!classSize) continue; // no students → no shortfall to project; don't invent one
+    predictions.push({
+      day: null,
+      period: null,
+      subject: gap.subject,
+      class_section: gap.class_section,
+      predicted_shortfall: classSize,
+      reason: `no teacher is qualified to teach ${gap.subject} to ${gap.class_section}`,
+    });
+  }
+
+  predictions.sort((a, b) => b.predicted_shortfall - a.predicted_shortfall);
+  return predictions.slice(0, Math.max(0, Number(limit) || 10));
+}
+
+module.exports = { predictStaffing };
