@@ -4,11 +4,8 @@ An AI-powered operations platform for schools — paperwork in, system out.
 
 SchoolVerse replaces the manual admissions forms, disconnected spreadsheets, and reactive firefighting that most school offices run on with a single platform: an AI document reader that digitizes paper forms, a constraint-solving timetable generator that can't double-book a teacher or room, a dashboard that surfaces problems before an admin goes looking for them, and simulated RFID/CV attendance ingestion on the same API real hardware would use.
 
-Built for [Hackathon Name] · [Team Name] · [Date]
-
-Live demo: https://schoolverse-u7n5.onrender.com · Admin login: provided separately / see Judge Notes
-
-> **Demo video:** _[insert link/GIF here — 3-minute walkthrough of the judge flow: admin login → attention queue → upload → timetable generate + resolve → attendance scan → teacher login]_ · recorded per the Day 7 rehearsal script in `DEMO.md`.
+**Live demo:** https://schoolverse-u7n5.onrender.com
+**Admin login:** https://schoolverse-u7n5.onrender.com/login.html
 
 ## Table of contents
 
@@ -24,8 +21,9 @@ Live demo: https://schoolverse-u7n5.onrender.com · Admin login: provided separa
 - [Security](#security)
 - [Testing](#testing)
 - [Deployment](#deployment)
-- [Judge notes](#judge-notes)
+- [Operational notes](#operational-notes)
 - [Roadmap](#roadmap)
+- [License](#license)
 
 ## The problem
 
@@ -33,21 +31,21 @@ Schools still run daily operations on paper and disconnected tools: admissions f
 
 ## What SchoolVerse does
 
-| Requirement | Status | How |
+| Feature | Status | How |
 |---|---|---|
 | AI Document Reader | ✅ Live | Uploaded admission forms / fee receipts / medical records are read by a real vision-capable LLM and extracted into structured fields for review |
 | Smart Timetables | ✅ Live | A constraint-satisfaction solver generates a full weekly schedule with zero teacher/room double-bookings by construction; a full manual editor (add/edit/delete any slot) sits alongside it |
 | All-in-One System | ✅ Live | Students, staff, rooms, timetable, attendance, fees, and uploaded forms live in one database and update in real time across the dashboard |
 | Proactive Admin Dashboard | ✅ Live | An attention queue — clashes, pending reviews, staffing gaps, overdue fees — renders from real state and re-scans after every change; the dashboard's stat cards, queue, and feeds re-render through a small observable store, not a full-page refresh |
 | Roles & Teacher Dashboard | ✅ Live | A teacher account (env-gated in the seed, like the admin) logs into its own scoped view — own weekly timetable, own students' attendance with manual correction, and alerts relevant to those students only; scope derives from real timetable data, never duplicated config |
-| Bonus: Actionable Smart Staffing | ✅ Live | A statistical heuristic projects staffing shortfalls from real attendance history and unqualified-subject gaps — and when a shortfall is projected, suggests a qualified teacher who is actually free at that slot, with a one-click accept that applies the reassignment through the normal slot-edit path |
-| Bonus: Auto-Attendance | ✅ Live | RFID/CV scan events post to a real ingestion endpoint and appear in a live-polling attendance feed; two simulators (a background script and a dashboard button) stand in for physical hardware, hitting the identical API contract a real reader would |
+| Actionable Smart Staffing | ✅ Live | A statistical heuristic projects staffing shortfalls from real attendance history and unqualified-subject gaps — and when a shortfall is projected, suggests a qualified teacher who is actually free at that slot, with a one-click accept that applies the reassignment through the normal slot-edit path |
+| Auto-Attendance | ✅ Live | RFID/CV scan events post to a real ingestion endpoint and appear in a live-polling attendance feed; two simulators (a background script and a dashboard button) stand in for physical hardware, hitting the identical API contract a real reader would |
 | Fee Ledger | ✅ Live | A payments table with computed per-student running balances against an expected-fee figure; recording a payment reconciles fee status and the overdue-fee notification appears/clears through the same scan path as every other alert |
 | Attendance → Action | ✅ Live | A student crossing 3 consecutive days of absence (from real scan/correction rows) triggers a notification automatically — threshold as a named constant, re-opens/resolves exactly like the other notification types |
 
 ## AI components — what's real AI vs. classical logic
 
-Being upfront about this matters for judging, so here's the honest breakdown:
+Being upfront about this matters, so here's the honest breakdown:
 
 | Piece | Category | Detail |
 |---|---|---|
@@ -104,6 +102,8 @@ tests/                       Full route + logic coverage, in-memory DB
 Requires **Node 22.x** (pinned in `engines.node` and `render.yaml` — newer runtimes don't yet have a prebuilt binary for the SQLite driver).
 
 ```bash
+git clone https://github.com/abhibms2005/schoolai
+cd schoolai
 npm install
 SEED_ADMIN_EMAIL=admin@your-school.org SEED_ADMIN_PASSWORD='pick-a-strong-password' npm run setup
 npm start
@@ -135,7 +135,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | required, no default | Admin credentials for the seeded account |
 | `SEED_DEMO_ON_BOOT` | unset | `true` → seed demo data on boot when the DB is empty (used for ephemeral free-tier hosting) |
 | `UPLOADS_DIR` | `public/uploads` | Uploaded form storage (point at a persistent disk in production) |
-| `GEMINI_API_KEY` | unset | Free key from aistudio.google.com/apikey for live document extraction |
+| `GEMINI_API_KEY` | unset | Key from aistudio.google.com/apikey for live document extraction |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Override the extraction model per deployment |
 | `SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD` | unset | Optional teacher account created by the seed (linked to `SEED_TEACHER_STAFF_NAME`, default `R. Iyer`) — same no-default policy as the admin |
 | `FEE_OVERDUE_THRESHOLD` | `0` | Grace figure for the overdue-fee rule — a balance-driven student is flagged overdue only once their balance exceeds this amount (default 0 = overdue as soon as anything is outstanding) |
@@ -165,7 +165,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | POST | `/api/timetable/detect-conflicts` | Re-run the conflict scan on demand — returns flagged/open counts |
 | POST | `/api/timetable/slots` | Add a slot |
 | PATCH/DELETE | `/api/timetable/slots/:id` | Full single-slot editor / delete |
-| PATCH | `/api/timetable/slots/:id/reassign` | Reassign a slot's teacher/room — the route the conflict-Fix and staffing-suggestion Accept actions use |
+| PATCH | `/api/timetable/slots/:id/reassign` | Reassign a slot's teacher/room — the route the conflict-fix and staffing-suggestion accept actions use |
 | PATCH | `/api/notifications/:id/resolve` | Resolve an item |
 | GET | `/api/auth/me` | Current session — email, role, and staff link (admin or teacher session) |
 | GET | `/api/attendance/summary` | Live feed source |
@@ -216,16 +216,14 @@ Runs the full suite against in-memory SQLite databases, exercising route handler
 
 Live on Render via the included `render.yaml` blueprint — connect the repo, supply `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` when prompted, and deploy. Full walkthrough and free-tier persistence tradeoffs are documented inline in `render.yaml`.
 
-**Free-tier note:** Render's free instances have an ephemeral filesystem and spin down after ~15 minutes of inactivity. SchoolVerse re-seeds a fresh demo database on every boot, so the app always looks alive — but anything entered through the dashboard during a session resets when it idles out. This is a deliberate tradeoff for a $0 hackathon deployment; the codebase is disk-persistence-ready for a paid instance (see comments in `render.yaml`).
+**Free-tier note:** Render's free instances have an ephemeral filesystem and spin down after ~15 minutes of inactivity. SchoolVerse re-seeds a fresh demo database on every boot, so the app always looks alive — but anything entered through the dashboard during a session resets when it idles out. This is a deliberate tradeoff for a $0 deployment; the codebase is disk-persistence-ready for a paid instance (see comments in `render.yaml`).
 
-## Judge notes
+## Operational notes
 
 - If the site has been idle, the first request may take 30–50 seconds to wake up — this is Render's free-tier cold start, not a bug.
 - Data resets to the seeded demo state after ~15 minutes of inactivity, by design (see Deployment).
 - Document extraction requires a `GEMINI_API_KEY` to be configured on the live instance; without it, uploads still work end-to-end but land in manual review instead of an AI-extracted state.
-- The demo seed tells a deliberate story on first load: one live timetable conflict, one low-confidence form in review, one overdue fee, one absence alert, and an actionable staffing suggestion — everything visible without a single click.
 - Teacher login: if you set `SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD` on the live instance, a second login is available for the teacher-scoped view (linked to the staff row from `SEED_TEACHER_STAFF_NAME`). Credentials are env-gated like the admin's — nothing is committed.
-- Everything under *What SchoolVerse does* is tested live, not just implemented — see the AI components table for exactly what's a real model call versus deterministic logic.
 
 ## Roadmap
 
@@ -233,3 +231,7 @@ Live on Render via the included `render.yaml` blueprint — connect the repo, su
 - Parent/student portal and finer-grained permission tiers
 - Postgres migration for persistent, multi-writer production use
 - Batched/queued document extraction for bulk uploads beyond the free-tier rate limit
+
+## License
+
+MIT License — feel free to use this project for learning and development.
