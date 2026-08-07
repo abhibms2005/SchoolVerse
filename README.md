@@ -103,7 +103,7 @@ Requires **Node 22.x** (pinned in `engines.node` and `render.yaml` — newer run
 
 ```bash
 git clone https://github.com/abhibms2005/schoolai
-cd schoolai
+cd schoolverse
 npm install
 SEED_ADMIN_EMAIL=admin@your-school.org SEED_ADMIN_PASSWORD='pick-a-strong-password' npm run setup
 npm start
