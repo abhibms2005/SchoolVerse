@@ -106,6 +106,24 @@ test('accepting the suggestion updates the timetable and never re-suggests the a
   } finally { await h.close(); }
 });
 
+test('empty staff_subjects table degrades to a clean no-candidate fallback', () => {
+  const db = makeDb();
+  // Real attendance history, a real slot with a teacher — but NO staff_subjects
+  // rows at all (incomplete data). Must not crash, must not invent a teacher.
+  db.prepare(`INSERT INTO staff (name, subject) VALUES ('A. Alpha', 'Physics')`).run();
+  db.prepare(`INSERT INTO students (name, class, section, status) VALUES ('S1', '10A', 'A', 'active'), ('S2', '10A', 'B', 'active')`).run();
+  db.prepare(`INSERT INTO rooms (name, capacity, room_type) VALUES ('Lab 1', 30, 'lab')`).run();
+  const slotId = db.prepare(`INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section) VALUES (0, 1, 'Physics', 1, 1, '10A')`).run().lastInsertRowid;
+  const att = db.prepare(`INSERT INTO attendance_records (student_id, date, status) VALUES (?, ?, 'absent')`);
+  for (const date of ['2026-01-05', '2026-01-12', '2026-01-19']) { att.run(1, date); att.run(2, date); }
+
+  const suggestions = suggestStaffing(db, 10);
+  const match = suggestions.find((s) => s.slot_id === slotId);
+  assert.ok(match, 'a suggestion row exists for the slot');
+  assert.equal(match.suggestion, null);
+  assert.match(match.suggestion_reason, /no qualified teacher is free at this slot/);
+});
+
 test('assigning a different teacher re-opens the suggestion', async () => {
   const h = await mountRouter(timetableRouter, '/api/timetable', { email: 'a@school', role: 'admin' });
   try {

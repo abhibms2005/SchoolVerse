@@ -237,6 +237,36 @@ test('login issues a role-carrying session cookie', async () => {
   } finally { await new Promise((r) => server.close(r)); }
 });
 
+// Mirror server.js's mount order exactly: teacher routes mount BEFORE the
+// admin-only gate, so a teacher reaches /api/teacher/* but gets a clean 403
+// on every admin surface (roster, payments, forms, timetable writes…).
+test('server mount order: teacher gets 403 on admin routes, 200 on teacher routes', async () => {
+  const app = express();
+  const db = makeDb();
+  app.use(express.json());
+  app.use((req, res, next) => { req.db = db; next(); });
+  // The real server.js requires a signed session; here we inject the role
+  // directly (the same payload requireAuth would verify) to isolate the gate.
+  app.use('/api', (req, res, next) => { req.admin = { email: 't@school', role: 'teacher', staff_id: 1 }; next(); });
+  app.use('/api/teacher', requireRole('teacher', 'admin'), require('../routes/teacher'));
+  app.use('/api', requireRole('admin'));
+  app.use('/api/roster', require('../routes/roster'));
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    // Teacher scoped route: 200 (staff linked).
+    db.prepare(`INSERT INTO staff (name, subject, status) VALUES ('A. Alpha', 'Physics', 'active')`).run();
+    const teacher = await fetch(`${base}/api/teacher/timetable`);
+    assert.equal(teacher.status, 200);
+    // Admin-only surface: clean 403, not a 500.
+    const roster = await fetch(`${base}/api/roster/students`);
+    assert.equal(roster.status, 403);
+    const body = await roster.json();
+    assert.match(body.error, /admin/);
+  } finally { await new Promise((r) => server.close(r)); }
+});
+
 test('role-scoped admin access is retained: admin can mount teacher view data', async () => {
   const h = await mountRouter(teacherRouter, '/api/teacher', { email: 'a@school', role: 'admin', staff_id: 1 });
   try {
