@@ -8,6 +8,8 @@ Built for [Hackathon Name] · [Team Name] · [Date]
 
 Live demo: https://schoolverse-u7n5.onrender.com · Admin login: provided separately / see Judge Notes
 
+> **Demo video:** _[insert link/GIF here — 3-minute walkthrough of the judge flow: admin login → attention queue → upload → timetable generate + resolve → attendance scan → teacher login]_ · recorded per the Day 7 rehearsal script in `DEMO.md`.
+
 ## Table of contents
 
 - [The problem](#the-problem)
@@ -37,8 +39,11 @@ Schools still run daily operations on paper and disconnected tools: admissions f
 | Smart Timetables | ✅ Live | A constraint-satisfaction solver generates a full weekly schedule with zero teacher/room double-bookings by construction; a full manual editor (add/edit/delete any slot) sits alongside it |
 | All-in-One System | ✅ Live | Students, staff, rooms, timetable, attendance, fees, and uploaded forms live in one database and update in real time across the dashboard |
 | Proactive Admin Dashboard | ✅ Live | An attention queue — clashes, pending reviews, staffing gaps, overdue fees — renders from real state and re-scans after every change; the dashboard's stat cards, queue, and feeds re-render through a small observable store, not a full-page refresh |
-| Bonus: Smart Staffing | ✅ Live | A statistical heuristic projects staffing shortfalls from real attendance history and unqualified-subject gaps |
+| Roles & Teacher Dashboard | ✅ Live | A teacher account (env-gated in the seed, like the admin) logs into its own scoped view — own weekly timetable, own students' attendance with manual correction, and alerts relevant to those students only; scope derives from real timetable data, never duplicated config |
+| Bonus: Actionable Smart Staffing | ✅ Live | A statistical heuristic projects staffing shortfalls from real attendance history and unqualified-subject gaps — and when a shortfall is projected, suggests a qualified teacher who is actually free at that slot, with a one-click accept that applies the reassignment through the normal slot-edit path |
 | Bonus: Auto-Attendance | ✅ Live | RFID/CV scan events post to a real ingestion endpoint and appear in a live-polling attendance feed; two simulators (a background script and a dashboard button) stand in for physical hardware, hitting the identical API contract a real reader would |
+| Fee Ledger | ✅ Live | A payments table with computed per-student running balances against an expected-fee figure; recording a payment reconciles fee status and the overdue-fee notification appears/clears through the same scan path as every other alert |
+| Attendance → Action | ✅ Live | A student crossing 3 consecutive days of absence (from real scan/correction rows) triggers a notification automatically — threshold as a named constant, re-opens/resolves exactly like the other notification types |
 
 ## AI components — what's real AI vs. classical logic
 
@@ -76,16 +81,19 @@ src/
   db.js                      better-sqlite3 connection (WAL mode, FK enforcement)
   auth.js                    Signed-cookie sessions + bcrypt hashing
   conflict-detector.js       Timetable conflict detection (staff/room double-booking)
-  notification-service.js    Generates notifications from real conflicts/forms/staffing gaps/overdue fees
+  notification-service.js    Generates notifications from conflicts/forms/staffing gaps/fee overdues/absences
   stats.js                   Real aggregate queries for the stats section
   document-extractor.js      LLM document extraction (Google Gemini)
   timetable-generator.js     Constraint-satisfaction timetable generator (backtracking)
-  staffing-predictor.js      Statistical staffing-heuristic predictions
-routes/                      /api/* handlers
+  staffing-predictor.js      Statistical staffing-heuristic predictions + suggested fixes
+  fees.js                    Computed payment balances + fee_status reconciliation
+routes/                      /api/* handlers (auth, timetable, forms, attendance, roster,
+                             stats, notifications, staffing, payments, teacher)
 scripts/simulate-scanner.js  Simulated RFID/CV hardware client
 public/
   index.html                 Landing page (live data sections)
-  dashboard.html             Dashboard app (post-login)
+  dashboard.html             Admin dashboard app (post-login)
+  teacher.html               Teacher-scoped dashboard (post-login)
   login.html                 Sign-in
   styles.css / app.js        Shared token system + reactive store
 tests/                       Full route + logic coverage, in-memory DB
@@ -129,6 +137,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | `UPLOADS_DIR` | `public/uploads` | Uploaded form storage (point at a persistent disk in production) |
 | `GEMINI_API_KEY` | unset | Free key from aistudio.google.com/apikey for live document extraction |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Override the extraction model per deployment |
+| `SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD` | unset | Optional teacher account created by the seed (linked to `SEED_TEACHER_STAFF_NAME`, default `R. Iyer`) — same no-default policy as the admin |
 | `BASE_URL` / `SCAN_INTERVAL_MS` / `SCAN_METHOD` | — | Config for `npm run scan:simulate` only |
 
 ## API reference
@@ -158,14 +167,28 @@ No default admin credentials are committed anywhere in this repo — the server 
 | POST | `/api/attendance/scan` | Real scan ingestion — idempotent per student per day |
 | GET/POST/PATCH/DELETE | `/api/roster/students` · `/staff` · `/rooms` | Full CRUD, soft-delete + restore |
 | GET | `/api/staffing/predictions` | Staffing outlook |
+| GET/POST | `/api/payments` | Payment history + computed balances / record a payment (reconciles fee status) |
+
+**Teacher-scoped (teacher or admin session)**
+
+| Method | Endpoint | Notes |
+|---|---|---|
+| GET | `/api/teacher/timetable` | The teacher's own weekly grid (read-only) |
+| GET | `/api/teacher/attendance` | Their students' recent attendance (`?days=`, default 14) |
+| PATCH | `/api/teacher/attendance/:studentId` | Manual correction — only for a student in a class the teacher actually teaches |
+| GET | `/api/teacher/notifications` | Alerts for their students only |
 
 ## How the proactive pieces work
 
 - **Conflict detection** checks every slot for a shared teacher or room at the same day+period; reassigning a slot triggers a full rescan so peers clear automatically.
-- **Notifications** are generated from real state — conflicts, pending reviews, low-confidence extractions, staffing gaps, and overdue fees — each with a fingerprint so repeated scans never spam duplicates, and recurring issues correctly re-open.
+- **Notifications** are generated from real state — conflicts, pending reviews, low-confidence extractions, staffing gaps, overdue fees, and consecutive absences — each with a fingerprint so repeated scans never spam duplicates, and recurring issues correctly re-open.
 - **Document reader** calls Gemini directly, parses strict JSON into the extraction schema, and never crashes on a bad response — failures land in a review queue with the exact error visible in both the dashboard and the server logs.
 - **Timetable generator** is a constraint solver over real curriculum/staffing input tables; anything it can't place becomes a staffing-gap notification instead of a silent failure.
+- **Staffing suggestions** cross-reference the staff table's subject qualifications and the timetable's availability for the projected slot — the suggestion names a qualified teacher who is actually free, and accepting it reuses the standard slot-reassign path; if none is free, the alert says so explicitly.
+- **Fee ledger** computes running balances from a payments table against each student's expected fee; recording a payment reconciles `fee_status` so the overdue-fee alert appears/clears on the next scan.
+- **Absence alerts** fire when a student crosses 3 consecutive days of absence from real attendance rows (scans or corrections), and clear automatically once they attend again.
 - **Auto-attendance** posts to the same endpoint real RFID/CV hardware would use; the dashboard's live feed re-polls every 5 seconds.
+- **Roles** — a teacher's scope (their classes, their students) is derived from real timetable data via the `staff_id` link on their account, so there is no duplicated per-teacher configuration to drift.
 - **Dashboard** re-renders reactively through a small observable store — each panel updates only when its own data changes, not on a full-page refresh.
 
 ## Security
@@ -195,11 +218,13 @@ Live on Render via the included `render.yaml` blueprint — connect the repo, su
 - If the site has been idle, the first request may take 30–50 seconds to wake up — this is Render's free-tier cold start, not a bug.
 - Data resets to the seeded demo state after ~15 minutes of inactivity, by design (see Deployment).
 - Document extraction requires a `GEMINI_API_KEY` to be configured on the live instance; without it, uploads still work end-to-end but land in manual review instead of an AI-extracted state.
+- The demo seed tells a deliberate story on first load: one live timetable conflict, one low-confidence form in review, one overdue fee, one absence alert, and an actionable staffing suggestion — everything visible without a single click.
+- Teacher login: if you set `SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD` on the live instance, a second login is available for the teacher-scoped view (linked to the staff row from `SEED_TEACHER_STAFF_NAME`). Credentials are env-gated like the admin's — nothing is committed.
 - Everything under *What SchoolVerse does* is tested live, not just implemented — see the AI components table for exactly what's a real model call versus deterministic logic.
 
 ## Roadmap
 
-- Fee ledger / payment history beyond the current status field
-- Multi-admin roles and permissions
+- Full billing engine beyond the current ledger — invoices, receipts, instalments
+- Parent/student portal and finer-grained permission tiers
 - Postgres migration for persistent, multi-writer production use
 - Batched/queued document extraction for bulk uploads beyond the free-tier rate limit
