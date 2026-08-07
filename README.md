@@ -138,6 +138,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | `GEMINI_API_KEY` | unset | Free key from aistudio.google.com/apikey for live document extraction |
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Override the extraction model per deployment |
 | `SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD` | unset | Optional teacher account created by the seed (linked to `SEED_TEACHER_STAFF_NAME`, default `R. Iyer`) — same no-default policy as the admin |
+| `FEE_OVERDUE_THRESHOLD` | `0` | Grace figure for the overdue-fee rule — a balance-driven student is flagged overdue only once their balance exceeds this amount (default 0 = overdue as soon as anything is outstanding) |
 | `BASE_URL` / `SCAN_INTERVAL_MS` / `SCAN_METHOD` | — | Config for `npm run scan:simulate` only |
 
 ## API reference
@@ -152,6 +153,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | GET | `/api/timetable` | Weekly grid with conflict state |
 | GET | `/api/notifications` | Open attention items |
 | POST | `/api/auth/login` | Returns a session cookie |
+| POST | `/api/auth/logout` | Clears the session cookie |
 
 **Authenticated (session cookie required)**
 
@@ -160,9 +162,12 @@ No default admin credentials are committed anywhere in this repo — the server 
 | GET/POST | `/api/forms` | List / upload a form; extraction runs in the background |
 | PATCH | `/api/forms/:id/verify` · `/reject` · `/retry-extract` | Review workflow |
 | POST | `/api/timetable/generate` | Regenerate the whole timetable (destructive) |
+| POST | `/api/timetable/detect-conflicts` | Re-run the conflict scan on demand — returns flagged/open counts |
 | POST | `/api/timetable/slots` | Add a slot |
 | PATCH/DELETE | `/api/timetable/slots/:id` | Full single-slot editor / delete |
+| PATCH | `/api/timetable/slots/:id/reassign` | Reassign a slot's teacher/room — the route the conflict-Fix and staffing-suggestion Accept actions use |
 | PATCH | `/api/notifications/:id/resolve` | Resolve an item |
+| GET | `/api/auth/me` | Current session — email, role, and staff link (admin or teacher session) |
 | GET | `/api/attendance/summary` | Live feed source |
 | POST | `/api/attendance/scan` | Real scan ingestion — idempotent per student per day |
 | GET/POST/PATCH/DELETE | `/api/roster/students` · `/staff` · `/rooms` | Full CRUD, soft-delete + restore |
