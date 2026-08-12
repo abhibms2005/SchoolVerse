@@ -510,7 +510,7 @@
         }
         notifContainer.innerHTML = '';
         items.forEach(function (n) {
-          notifContainer.appendChild(buildNotifCard(n, null)); // read-only preview on the landing
+          notifContainer.appendChild(buildNotifCard(n)); // read-only preview on the landing (no handlers → default {} applies)
         });
         // Show the true open count (data.total), not the truncated preview length.
         attentionCount.textContent = data.total || items.length;

@@ -144,6 +144,7 @@ function notifClass(n) { return n.resolved ? 'ok' : (NOTIF_META[n.type] || { cls
  *   slot-edit write path.
  */
 function buildNotifCard(n, handlers = {}) {
+  if (!handlers) handlers = {}; // explicit null (e.g. read-only previews) must behave like the default
   const li = h('li', `notif notif--${notifClass(n)}`);
   if (n.resolved) li.classList.add('is-resolved');
 
