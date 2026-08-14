@@ -6,8 +6,26 @@ const { generateTimetable } = require('../src/timetable-generator');
 
 const router = express.Router();
 
-// GET /api/timetable — full grid (public read-only for the landing preview)
+// The real list of sections/classes the timetable knows about: the generator's
+// `classes` input table PLUS any section already present in timetable_slots
+// (legacy databases may have slots before the classes table was populated).
+// The admin UI's section selector is built from this — never hard-coded.
+function listSections(db) {
+  return db.prepare(`
+    SELECT name AS section FROM classes WHERE name != ''
+    UNION
+    SELECT DISTINCT class_section AS section FROM timetable_slots WHERE class_section != ''
+    ORDER BY section`).all().map((r) => r.section);
+}
+
+// GET /api/timetable?section=9A — the full grid by default (public read-only
+// for the landing preview), or a single section's slots when ?section= is
+// given (the admin UI renders ONE section at a time). Always returns the
+// active staff/room picklists plus the real section list for the selector.
 router.get('/', (req, res) => {
+  const section = typeof req.query.section === 'string' ? req.query.section.trim() : '';
+  const where = section ? 'WHERE ts.class_section = ?' : '';
+  const params = section ? [section] : [];
   const slots = req.db.prepare(`
     SELECT ts.id, ts.day, ts.period, ts.subject, ts.class_section,
            ts.conflict, ts.conflict_reason, ts.resolved_from_conflict,
@@ -16,13 +34,14 @@ router.get('/', (req, res) => {
       FROM timetable_slots ts
       LEFT JOIN staff st ON st.id = ts.staff_id
       LEFT JOIN rooms r   ON r.id  = ts.room_id
+     ${where}
      ORDER BY ts.day, ts.period
-  `).all();
+  `).all(...params);
   // Active-only: soft-deleted (inactive) rooms/staff are never offered for
   // reassignment or shown as assignable.
   const rooms = req.db.prepare(`SELECT id, name, capacity FROM rooms WHERE status = 'active' ORDER BY name`).all();
   const staff = req.db.prepare(`SELECT id, name, subject FROM staff WHERE status = 'active' ORDER BY name`).all();
-  res.json({ slots, rooms, staff });
+  res.json({ slots, rooms, staff, sections: listSections(req.db) });
 });
 
 // POST /api/timetable/detect-conflicts — trigger a full scan (authed)

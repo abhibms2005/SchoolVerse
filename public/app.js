@@ -309,6 +309,77 @@ function buildTimetable(data, opts = {}) {
   return table;
 }
 
+/**
+ * Render ONE section's weekly grid (rows = periods, columns = Mon-Fri).
+ * Each occupied cell shows subject (primary) with teacher/room (secondary),
+ * a compact clash/gap/resolved badge when present, and — when showEdit is
+ * set — a single Edit control per slot. Empty cells read as a clean "—".
+ * Used by the admin timetable tab: the section selector + this grid replace
+ * the old all-sections-at-once view.
+ * @param {object} data  { slots } — slots for the selected section only
+ * @param {object} opts  { showEdit, onEdit(slot) }
+ */
+function buildSectionTimetable(data, opts = {}) {
+  const { slots = [] } = data;
+  const table = h('table', 'tt tt--section');
+  table.setAttribute('aria-label', 'Weekly timetable');
+
+  const thead = h('thead');
+  const headRow = h('tr');
+  headRow.appendChild(h('th', 'period-col', 'Period'));
+  DAYS.slice(0, 5).forEach((d) => headRow.appendChild(h('th', '', d)));
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = h('tbody');
+  PERIODS.forEach((period) => {
+    const row = h('tr');
+    row.appendChild(h('th', '', `P${period} · ${periodLabel(period)}`));
+    // Iterate day INDICES (0-4), not names — slot.day is the numeric weekday.
+    DAYS.slice(0, 5).forEach((_, day) => {
+      const cellSlots = slots.filter((s) => s.day === day && s.period === period);
+      const cell = h('td', '');
+      if (cellSlots.length === 0) {
+        cell.classList.add('free');
+        cell.textContent = '—';
+        cell.title = 'Free period';
+      } else {
+        const hasClash = cellSlots.some((s) => s.conflict === 1);
+        const hasGap = cellSlots.some((s) => s.staff_id == null);
+        const hasResolved = cellSlots.some((s) => s.resolved_from_conflict === 1 && !s.conflict);
+        cell.classList.add('tt-cell');
+        if (hasClash) cell.classList.add('tt-clash');
+        else if (hasGap) cell.classList.add('tt-gap');
+        else if (hasResolved) cell.classList.add('tt-resolved');
+
+        cellSlots.forEach((s) => {
+          const entry = h('div', 'tt-entry');
+          entry.appendChild(h('strong', '', s.subject));
+          entry.appendChild(h('span', 'tt-sub', s.staff_id != null ? (s.staff_name || '—') : 'No teacher'));
+          entry.appendChild(h('span', 'tt-sub tt-sub--room', s.room_name || '—'));
+          cell.appendChild(entry);
+        });
+        if (hasClash) cell.appendChild(h('span', 'tt-badge', 'Clash'));
+        else if (hasGap) cell.appendChild(h('span', 'tt-badge', 'No teacher'));
+        else if (hasResolved) cell.appendChild(h('span', 'tt-badge', 'Auto-resolved'));
+
+        if (opts.showEdit && opts.onEdit) {
+          cellSlots.forEach((s) => {
+            const edit = h('button', 'btn btn--small btn--ghost tt-edit', 'Edit');
+            edit.setAttribute('aria-label', `Edit ${s.subject}`);
+            edit.addEventListener('click', () => opts.onEdit(s));
+            cell.appendChild(edit);
+          });
+        }
+      }
+      row.appendChild(cell);
+    });
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
 function periodLabel(period) {
   const times = { 1: '08:30', 2: '09:20', 3: '10:20', 4: '11:20', 5: '12:10', 6: '13:30' };
   return times[period] || '';

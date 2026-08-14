@@ -84,11 +84,18 @@
         <h2>Weekly timetable</h2>
         <span class="app-actions" style="gap:0.6rem;">
           <span class="mono" id="ttStatus"></span>
-          <button class="btn btn--small btn--teal" id="addSlotBtn">+ Add slot</button>
           <button class="btn btn--small btn--gold" id="genTtBtn">Generate timetable</button>
         </span>
       </div>
       <div class="app-panel-body">
+        <!-- Section selector: one section at a time. Generation still solves
+             EVERY section together (teacher/room constraints are global). -->
+        <div class="tt-toolbar">
+          <span class="tt-label" id="ttSectionLabel">Section</span>
+          <select id="ttSection" class="tt-select" aria-labelledby="ttSectionLabel"></select>
+          <span class="tt-hint mono" id="ttSectionHint">Generation schedules every section with global teacher &amp; room constraints</span>
+          <button class="btn btn--small btn--teal" id="addSlotBtn">+ Add slot</button>
+        </div>
         <div id="genResult"></div>
         <div class="tt-wrap" id="ttWrap"></div>
         <p class="tt-legend" style="margin-top:1.2rem;color:var(--ink-muted);" id="ttLegend">
@@ -498,42 +505,80 @@
     if (currentTab === 'overview') refreshAttendancePanel();
   }, 5000);
 
-  /* ---------- timetable ---------- */
+  /* ---------- timetable (one section at a time) ----------
+     The admin UI renders ONE section's weekly grid. Generation itself stays
+     global: POST /api/timetable/generate solves every section together with
+     shared teacher/room constraints — this view only ever filters it.
+     The section list comes from the API (real roster/generator data), never
+     hard-coded. */
+  var ttSelected = '';       // the section currently shown
+  var ttSections = [];       // real section list from the API
+  var ttSectionEl = document.getElementById('ttSection');
+
   function loadTimetable() {
     var wrap = document.getElementById('ttWrap');
     var status = document.getElementById('ttStatus');
     wrap.innerHTML = '<div class="skeleton skel-card" style="height:420px;border-radius:18px;"></div>';
-    apiFetch('/api/timetable')
+    apiFetch('/api/timetable') // full grid: staff/room picklists + section list
       .then(function (data) {
         state.timetable = data;
-        if (!data.slots || data.slots.length === 0) {
-          emptyState(wrap, { title: 'No timetable yet', hint: 'Add slots or generate one — the conflict detector watches every new slot.' });
+        ttSections = data.sections || [];
+        // Keep the current selection when it still exists; otherwise fall back
+        // to the first real section.
+        if (ttSections.indexOf(ttSelected) === -1) {
+          ttSelected = ttSections.length ? ttSections[0] : '';
+        }
+        ttSectionEl.innerHTML = '';
+        ttSections.forEach(function (s) {
+          var opt = h('option', '', s);
+          opt.value = s;
+          ttSectionEl.appendChild(opt);
+        });
+        ttSectionEl.value = ttSelected;
+        ttSectionEl.disabled = ttSections.length === 0;
+        if (!ttSelected) {
+          emptyState(wrap, { title: 'No sections yet', hint: 'Add sections to the generator inputs (classes) or create timetable slots, then pick one here.' });
           status.textContent = '';
           return;
         }
+        fetchSectionTimetable(ttSelected);
+      })
+      .catch(function (err) { errorState(wrap, { message: err.message, onRetry: loadTimetable }); });
+  }
+
+  function fetchSectionTimetable(section) {
+    var wrap = document.getElementById('ttWrap');
+    var status = document.getElementById('ttStatus');
+    wrap.innerHTML = '<div class="skeleton skel-card" style="height:420px;border-radius:18px;"></div>';
+    apiFetch('/api/timetable?section=' + encodeURIComponent(section))
+      .then(function (data) {
+        state.sectionSlots = data.slots || [];
+        if (!data.slots || data.slots.length === 0) {
+          emptyState(wrap, {
+            title: 'No timetable for ' + section + ' yet',
+            hint: 'Add a slot for this section, or generate the full school timetable (it schedules every section with global teacher & room constraints).',
+          });
+          status.textContent = section + ' · no slots yet';
+          return;
+        }
         wrap.innerHTML = '';
-        wrap.appendChild(buildTimetable(data, {
-          showFix: true,
-          onFix: function (slot, roomId) { reassignSlot(slot, roomId); },
+        wrap.appendChild(buildSectionTimetable(data, {
           showEdit: true,
           onEdit: function (slot) { openSlotModal('edit', slot); },
         }));
         var clashCount = data.slots.filter(function (s) { return s.conflict === 1; }).length;
         var gapCount = data.slots.filter(function (s) { return s.staff_id === null; }).length;
-        status.textContent = clashCount + ' clash' + (clashCount === 1 ? '' : 'es') + ' · ' + gapCount + ' unassigned';
+        status.textContent = section + ' · ' + clashCount + ' clash' + (clashCount === 1 ? '' : 'es') + ' · ' + gapCount + ' unassigned';
       })
-      .catch(function (err) { errorState(wrap, { message: err.message, onRetry: loadTimetable }); });
+      .catch(function (err) { errorState(wrap, { message: err.message, onRetry: function () { fetchSectionTimetable(section); } }); });
   }
 
-  function reassignSlot(slot, roomId) {
-    apiFetch('/api/timetable/slots/' + slot.id + '/reassign', { method: 'PATCH', body: { room_id: roomId } })
-      .then(function () {
-        loadTimetable();
-        loadOverview();
-        rescan();
-      })
-      .catch(function (err) { errorTop('Could not reassign: ' + err.message); });
-  }
+  // Switching section re-fetches ONLY that section's grid — no page reload,
+  // the reactive store keeps the rest of the dashboard untouched.
+  ttSectionEl.addEventListener('change', function () {
+    ttSelected = ttSectionEl.value;
+    fetchSectionTimetable(ttSelected);
+  });
 
   /* ---------- generate timetable (destructive, confirm modal) ---------- */
   var genBtn = document.getElementById('genTtBtn');
@@ -1155,6 +1200,10 @@
     deleteBtn.textContent = 'Delete slot';
     deleteBtn.classList.remove('btn--danger');
     document.getElementById('slotModalTitle').textContent = slot ? 'Edit slot' : 'Add slot';
+    // Make the edited context unmistakable: which section, which day/period.
+    document.getElementById('slotModalSub').textContent = slot
+      ? 'Editing ' + slot.class_section + ' · ' + DAYS[slot.day] + ' · P' + slot.period + ' — changes are re-checked by the conflict detector immediately.'
+      : 'Adding a slot to ' + (ttSelected || 'a section') + ' — changes are re-checked by the conflict detector immediately.';
     // The modal needs the active staff/room lists; the timetable fetch provides them.
     if (!state.timetable || !state.timetable.staff || !state.timetable.rooms) {
       apiFetch('/api/timetable')
@@ -1184,7 +1233,10 @@
     var slot = slotEditing;
     var classInput = h('input', '');
     classInput.type = 'text';
-    classInput.value = slot ? slot.class_section : '';
+    // New slots default to the section currently selected in the toolbar so
+    // an admin adding a slot can never accidentally drop it into another
+    // section; editing keeps the slot's own section.
+    classInput.value = slot ? slot.class_section : ttSelected;
     grid.appendChild(mkField('Class section', classInput, 'slotClass'));
 
     var subjectInput = h('input', '');

@@ -115,6 +115,9 @@ button { font-family: inherit; }
 .btn--teal:hover { background: #3A8374; box-shadow: 0 12px 24px -12px rgba(47, 111, 99, 0.6); }
 .btn--small { padding: 0.5rem 1rem; font-size: 0.875rem; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+/* The .btn class sets display:inline-flex, which would override the hidden
+   attribute's UA display:none and leave hidden buttons on screen. */
+.btn[hidden] { display: none; }
 
 /* Scroll reveal (landing) */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s ease, transform 0.7s ease; transition-delay: var(--d, 0s); }
@@ -600,8 +603,10 @@ button { font-family: inherit; }
 .app-stat .app-stat-val small { font-size: 0.85rem; color: var(--gold); font-weight: 600; }
 .app-stat .app-stat-sub { font-size: 0.8rem; color: var(--ink-muted); margin-top: 0.4rem; }
 
-/* Two-column app layout */
-.app-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.4rem; align-items: start; }
+/* Two-column app layout. minmax(0, …) lets each column shrink below its
+   content's intrinsic width — the standard fix so a wide table inside a
+   panel can never force the whole page wider. */
+.app-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
 .app-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1); overflow: hidden; }
 .app-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.4rem; border-bottom: 1px solid var(--line); }
 .app-panel-head h2 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; color: var(--ink); }
@@ -611,6 +616,10 @@ button { font-family: inherit; }
 .app-table-wrap { overflow-x: auto; }
 .app-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .app-table th, .app-table td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+/* Long unbroken values (file names, phone numbers, statuses) wrap inside
+   their column instead of stretching the table — only when a word alone is
+   longer than the column, so ordinary names are never broken mid-word. */
+.app-table td { overflow-wrap: anywhere; }
 .app-table thead th { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted); background: rgba(20, 33, 61, 0.03); }
 .app-table tbody tr { transition: background 0.15s ease; }
 .app-table tbody tr:hover { background: rgba(20, 33, 61, 0.025); }
@@ -760,8 +769,19 @@ button { font-family: inherit; }
   .hero-cue { display: none; }
 }
 
-/* ---------- Data hub (roster CRUD) ---------- */
-.hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.4rem; align-items: start; }
+/* ---------- Data hub (roster CRUD) ----------
+   Explicit 3 → 2 → 1 column breakpoints (never auto-fit minmax, which lets
+   cards squeeze below a usable width before stacking). Every column is
+   minmax(0, 1fr) so a wide table inside a card can never push the page
+   wider — overflow stays local to the card's table wrapper. */
+.hub-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4rem; align-items: start; }
+@media (max-width: 1100px) { .hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px)  { .hub-grid { grid-template-columns: 1fr; } }
+/* Long names / phone numbers / room names wrap inside the card instead of
+   stretching it; the break only ever happens when a single word is longer
+   than the column (overflow-wrap: anywhere). */
+.hub-grid .app-table td { overflow-wrap: anywhere; }
+.hub-grid .app-table td .actions { flex-wrap: wrap; }
 .btn--danger { background: var(--red); color: #fff; }
 .btn--danger:hover { background: #B83434; box-shadow: 0 12px 24px -12px rgba(201, 52, 52, 0.6); }
 .app-table tr.row-inactive td { opacity: 0.55; }
@@ -788,3 +808,95 @@ button { font-family: inherit; }
 }
 .hub-search input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.2); }
 .hub-search input::placeholder { color: var(--ink-muted); }
+
+/* ==========================================================================
+   18. Layout system (containment) — the page must never scroll horizontally.
+   ========================================================================== */
+/* Grid children must be allowed to shrink below their content's intrinsic
+   width; otherwise a wide table inside a card forces the whole page wider.
+   (min-width: 0 is the standard fix for the grid/flex auto-minimum trap.) */
+.app-grid > *, .hub-grid > * { min-width: 0; }
+.app-table-wrap, .att-table-wrap { min-width: 0; max-width: 100%; }
+.app-main { width: 100%; }
+/* The queue's table keeps its columns readable at normal desktop zoom and
+   scrolls only inside its own card when the viewport is narrow. */
+.app-table-wrap table { min-width: 0; }
+@media (max-width: 620px) {
+  .app-table-wrap .app-table { min-width: 560px; }
+}
+
+/* ==========================================================================
+   19. Section timetable (admin) — selector + one-section grid
+   ========================================================================== */
+.tt-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem;
+  margin-bottom: 1rem; padding: 0.2rem 0.1rem;
+}
+.tt-label {
+  color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.12em;
+  font-size: 0.7rem;
+}
+.tt-select {
+  font-family: var(--sans); font-size: 0.95rem; font-weight: 600; color: var(--navy);
+  padding: 0.5rem 2.2rem 0.5rem 0.9rem; border: 1.5px solid var(--navy);
+  border-radius: 10px; background: #fff; cursor: pointer; max-width: 100%;
+}
+.tt-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.2); }
+.tt-select:disabled { opacity: 0.6; cursor: not-allowed; }
+.tt-hint { color: var(--ink-muted); margin-left: auto; }
+@media (max-width: 800px) { .tt-hint { margin-left: 0; } }
+
+/* Section grid: subject primary, teacher/room secondary, compact cells. */
+.tt--section { min-width: 620px; font-size: 0.78rem; }
+.tt--section th, .tt--section td { padding: 0.7rem 0.8rem; }
+.tt--section .tt-cell strong { font-size: 0.86rem; font-weight: 600; }
+.tt--section .tt-sub { display: block; font-size: 0.68rem; color: var(--ink-muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.tt--section .tt-sub--room { color: var(--gold-muted); }
+.tt--section .tt-entry { margin-bottom: 0.3rem; }
+.tt--section .tt-entry:last-child { margin-bottom: 0; }
+.tt--section .tt-badge { margin-top: 0.35rem; }
+.tt--section .free { text-align: center; opacity: 0.55; }
+
+/* ==========================================================================
+   20. Teacher attendance table — aligned, wrapped, scrollable locally
+   ========================================================================== */
+.att-table-wrap { overflow-x: auto; }
+.att-table-wrap .app-table { min-width: 720px; }
+.att-table-wrap .app-table th, .att-table-wrap .app-table td { white-space: nowrap; }
+/* Student names wrap instead of pushing the grid wider. */
+.att-table-wrap .app-table td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 170px; max-width: 240px; }
+/* Date columns: fixed pitch so every row lines up under its column header. */
+.att-table-wrap .app-table th.num, .att-table-wrap .app-table td.num { text-align: center; min-width: 54px; }
+/* P / A / - indicators: identical dimensions regardless of letter. */
+.att-table-wrap .app-table .badge {
+  display: inline-block; min-width: 2em; text-align: center;
+  padding-inline: 0.35rem; box-sizing: border-box;
+}
+/* Correction controls: fixed column so Save never shifts between rows. */
+.att-table-wrap .app-table td:last-child { min-width: 215px; }
+.att-table-wrap .app-table .actions { display: flex; gap: 0.5rem; align-items: center; }
+.att-table-wrap .app-table .actions select {
+  flex: 1; min-width: 0; font-family: var(--sans); font-size: 0.85rem; color: var(--ink);
+  padding: 0.45rem 0.6rem; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff;
+}
+.att-table-wrap .app-table .actions .btn { min-width: 86px; justify-content: center; }
+
+/* ==========================================================================
+   21. Small-screen refinements for the app panels
+   ========================================================================== */
+@media (max-width: 800px) {
+  .app-panel-head { flex-wrap: wrap; }
+  .app-panel-body { padding: 1rem; }
+  .app-table th, .app-table td { padding: 0.6rem 0.7rem; }
+}
+
+/* App topbar on very narrow screens: drop the email text so the avatar +
+   sign-out fit without pushing the page wider. */
+@media (max-width: 480px) {
+  .app-user #userEmail { display: none; }
+  .app-user { gap: 0.45rem; }
+  .app-topbar .nav-inner { padding-inline: 1rem; }
+  .app-user .btn { padding: 0.4rem 0.7rem; font-size: 0.8rem; }
+  .app-topbar .brand-name { font-size: 1.1rem; }
+  .app-topbar .brand-mark { width: 30px; height: 30px; font-size: 1rem; }
+}

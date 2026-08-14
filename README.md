@@ -150,7 +150,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 | GET | `/api/health` | Liveness check |
 | GET | `/api/status` | Uptime, last scan, extraction queue counters |
 | GET | `/api/stats` | Real aggregates |
-| GET | `/api/timetable` | Weekly grid with conflict state |
+| GET | `/api/timetable` | Weekly grid with conflict state; `?section=9A` returns only that section plus the real section list (`sections`) for the admin selector — generation stays global |
 | GET | `/api/notifications` | Open attention items |
 | POST | `/api/auth/login` | Returns a session cookie |
 | POST | `/api/auth/logout` | Clears the session cookie |
