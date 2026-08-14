@@ -612,8 +612,9 @@ button { font-family: inherit; }
 .app-panel-head h2 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; color: var(--ink); }
 .app-panel-body { padding: 1.2rem 1.4rem 1.4rem; }
 
-/* Data table */
-.app-table-wrap { overflow-x: auto; }
+/* Data table — full-width, no horizontal scroll. Tables span 100% of their
+   container and columns flex/wrap naturally; nothing is clipped or hidden
+   behind a scrollbar. */
 .app-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .app-table th, .app-table td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
 /* Long unbroken values (file names, phone numbers, statuses) wrap inside
@@ -624,7 +625,7 @@ button { font-family: inherit; }
 .app-table tbody tr { transition: background 0.15s ease; }
 .app-table tbody tr:hover { background: rgba(20, 33, 61, 0.025); }
 .app-table .num { font-family: var(--mono); font-size: 0.8rem; }
-.app-table td .actions { display: flex; gap: 0.5rem; }
+.app-table td .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 /* Upload form */
 .upload-zone {
@@ -770,18 +771,43 @@ button { font-family: inherit; }
 }
 
 /* ---------- Data hub (roster CRUD) ----------
-   Explicit 3 → 2 → 1 column breakpoints (never auto-fit minmax, which lets
-   cards squeeze below a usable width before stacking). Every column is
-   minmax(0, 1fr) so a wide table inside a card can never push the page
-   wider — overflow stays local to the card's table wrapper. */
-.hub-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4rem; align-items: start; }
-@media (max-width: 1100px) { .hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 700px)  { .hub-grid { grid-template-columns: 1fr; } }
+   Single-column, full-page-width layout: Students, then Staff, then Rooms
+   stack vertically, each table spanning the whole width so every column is
+   visible at once with no horizontal scrollbar. */
+.hub-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem; align-items: start; }
 /* Long names / phone numbers / room names wrap inside the card instead of
    stretching it; the break only ever happens when a single word is longer
    than the column (overflow-wrap: anywhere). */
 .hub-grid .app-table td { overflow-wrap: anywhere; }
 .hub-grid .app-table td .actions { flex-wrap: wrap; }
+
+/* Admin data tables (Forms queue + Data hub): fixed table layout makes the
+   table EXACTLY as wide as its card at every viewport size — no horizontal
+   scrollbar, every column fully visible, and long values wrap inside their
+   column instead of being clipped. The actions column gets an explicit
+   readable width (header row — that's what fixed layout sizes from) and every
+   other column shares the remaining space equally. The teacher attendance
+   grid is deliberately excluded — it keeps auto layout + its own alignment
+   rules. */
+#formsTable .app-table, #hubStudents .app-table, #hubStaff .app-table, #hubRooms .app-table { table-layout: fixed; }
+
+#formsTable .app-table th:last-child { width: 160px; }      /* Review / Reject */
+#hubStudents .app-table th:last-child { width: 140px; }     /* Edit / Remove / Restore */
+#hubStaff .app-table th:last-child { width: 140px; }
+#hubRooms .app-table th:last-child { width: 140px; }
+/* Give the primary name column extra room; the rest share the remainder. */
+#formsTable .app-table th:first-child { width: 24%; }
+#hubStudents .app-table th:first-child { width: 26%; }
+#hubStaff .app-table th:first-child { width: 30%; }
+#hubRooms .app-table th:first-child { width: 30%; }
+/* Keep status/extraction pills on one line — there's now room for them. */
+#formsTable .app-table .badge, #hubStudents .app-table .badge,
+#hubStaff .app-table .badge, #hubRooms .app-table .badge { white-space: nowrap; }
+
+/* Compact action buttons so Edit/Remove and Review/Reject always fit inside
+   their column and wrap (stack) instead of overflowing it. */
+#panel-hub .app-table td .actions .btn,
+#panel-forms .app-table td .actions .btn { padding: 0.4rem 0.75rem; font-size: 0.8rem; }
 .btn--danger { background: var(--red); color: #fff; }
 .btn--danger:hover { background: #B83434; box-shadow: 0 12px 24px -12px rgba(201, 52, 52, 0.6); }
 .app-table tr.row-inactive td { opacity: 0.55; }
@@ -818,12 +844,12 @@ button { font-family: inherit; }
 .app-grid > *, .hub-grid > * { min-width: 0; }
 .app-table-wrap, .att-table-wrap { min-width: 0; max-width: 100%; }
 .app-main { width: 100%; }
-/* The queue's table keeps its columns readable at normal desktop zoom and
-   scrolls only inside its own card when the viewport is narrow. */
+/* Data tables never force a min-width: they always span their container
+   (width: 100%) and wrap, so no horizontal scrollbar can appear. */
 .app-table-wrap table { min-width: 0; }
-@media (max-width: 620px) {
-  .app-table-wrap .app-table { min-width: 560px; }
-}
+/* Forms tab: upload card on top, the full-width Forms queue below it — the
+   queue's table spans the whole panel so every column is visible at once. */
+#panel-forms .app-grid { grid-template-columns: minmax(0, 1fr); }
 
 /* ==========================================================================
    19. Section timetable (admin) — selector + one-section grid
