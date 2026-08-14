@@ -33,11 +33,11 @@ Schools still run daily operations on paper and disconnected tools: admissions f
 
 | Feature | Status | How |
 |---|---|---|
-| AI Document Reader | ✅ Live | Uploaded admission forms / fee receipts / medical records are read by a real vision-capable LLM and extracted into structured fields for review |
-| Smart Timetables | ✅ Live | A constraint-satisfaction solver generates a full weekly schedule with zero teacher/room double-bookings by construction; a full manual editor (add/edit/delete any slot) sits alongside it |
+| AI Document Reader | ✅ Live | Uploaded admission forms / fee receipts / medical records are read by a real vision-capable LLM and extracted into structured fields for review. Live extraction requires `GEMINI_API_KEY` on the deployed instance — without it, uploads still work end-to-end but land in manual review instead of crashing |
+| Smart Timetables | ✅ Live | A constraint-satisfaction solver generates one global weekly schedule for every section at once — zero teacher/room/section double-bookings by construction, and a failed run rolls back atomically. Admins view and edit one section at a time through a section selector (add/edit/delete any slot); generation always considers the whole school's constraints, never per-section in isolation. Note: the grid shown on first load is a curated demo seed (deliberately includes one room clash and one staffing gap so the dashboard has something to surface) — the solver's real output appears when you click **Generate timetable** on the Timetable tab |
 | All-in-One System | ✅ Live | Students, staff, rooms, timetable, attendance, fees, and uploaded forms live in one database and update in real time across the dashboard |
 | Proactive Admin Dashboard | ✅ Live | An attention queue — clashes, pending reviews, staffing gaps, overdue fees — renders from real state and re-scans after every change; the dashboard's stat cards, queue, and feeds re-render through a small observable store, not a full-page refresh |
-| Roles & Teacher Dashboard | ✅ Live | A teacher account (env-gated in the seed, like the admin) logs into its own scoped view — own weekly timetable, own students' attendance with manual correction, and alerts relevant to those students only; scope derives from real timetable data, never duplicated config |
+| Roles & Teacher Dashboard | ✅ Live | A teacher account (env-gated in the seed, like the admin) logs into its own scoped view — own weekly timetable, own students' attendance with one-click manual correction (P/A/L buttons), and alerts relevant to those students only; scope derives from real timetable data, never duplicated config |
 | Actionable Smart Staffing | ✅ Live | A statistical heuristic projects staffing shortfalls from real attendance history and unqualified-subject gaps — and when a shortfall is projected, suggests a qualified teacher who is actually free at that slot, with a one-click accept that applies the reassignment through the normal slot-edit path |
 | Auto-Attendance | ✅ Live | RFID/CV scan events post to a real ingestion endpoint and appear in a live-polling attendance feed; two simulators (a background script and a dashboard button) stand in for physical hardware, hitting the identical API contract a real reader would |
 | Fee Ledger | ✅ Live | A payments table with computed per-student running balances against an expected-fee figure; recording a payment reconciles fee status and the overdue-fee notification appears/clears through the same scan path as every other alert |
@@ -55,7 +55,7 @@ Being upfront about this matters, so here's the honest breakdown:
 | Staffing predictions | Statistical heuristic | Rolling absence rates over real attendance history, deliberately not framed as machine learning |
 | Attendance scans | Ingestion | Real rows written by a validated API endpoint; the "hardware" is simulated, the endpoint and data path are production-real |
 
-No number shown anywhere in the app is fabricated — stats, notifications, predictions, and the generated timetable are all computed from the live database at request time. The only non-live data is the local dev seed, which is explicitly blocked from running in production.
+No number shown anywhere in the app is fabricated — stats, notifications, predictions, and the generated timetable are all computed from the live database at request time. The only non-live data is the demo seed: it runs only when the database is empty — in dev, or on ephemeral hosts with `SEED_DEMO_ON_BOOT=true` (like the Render free tier, which re-seeds on every boot). The standalone seed script additionally refuses to run when `NODE_ENV=production`.
 
 ## Tech stack
 
@@ -102,7 +102,7 @@ tests/                       Full route + logic coverage, in-memory DB
 Requires **Node 22.x** (pinned in `engines.node` and `render.yaml` — newer runtimes don't yet have a prebuilt binary for the SQLite driver).
 
 ```bash
-git clone https://github.com/abhibms2005/schoolai
+git clone https://github.com/abhibms2005/SchoolVerse.git schoolverse
 cd schoolverse
 npm install
 SEED_ADMIN_EMAIL=admin@your-school.org SEED_ADMIN_PASSWORD='pick-a-strong-password' npm run setup
@@ -124,6 +124,17 @@ npm run scan:simulate   # simulate RFID/CV attendance hardware
 ```
 
 No default admin credentials are committed anywhere in this repo — the server refuses to seed or boot with demo data unless `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are explicitly set.
+
+## Judge demo script
+
+A timed, click-by-click rehearsal lives in [DEMO.md](DEMO.md). The exact click order to show every real feature firing live:
+
+1. **Sign in as admin** at `/login.html` (email/password from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`) → click **Sign in** → `/dashboard.html`.
+2. **Overview tab** — the "Recent notifications" queue shows real open items; try **Mark resolved** (`PATCH /api/notifications/:id/resolve`) and, when present, **Accept suggestion** (`PATCH /api/timetable/slots/:id/reassign`).
+3. **Forms tab** → drag an image/PDF into "Upload a physical form", pick type + student, click **Upload form** (`POST /api/forms`). The queue row flips from "Extracting…" to a confidence % (needs `GEMINI_API_KEY`) or to a graceful manual-review state. Open the row → **Verify with these details** (`PATCH /api/forms/:id/verify`) or **Reject** (`PATCH /api/forms/:id/reject`).
+4. **Timetable tab** → pick a section in the **Section** dropdown (real list, never hard-coded) → **Generate timetable** → **Generate** in the confirm modal (`POST /api/timetable/generate` — wipes + rebuilds every section together in one transaction, then re-checks conflicts). Expect "Conflicts: 0" in the result banner.
+5. **Overview tab** → **Simulate RFID scan** (`POST /api/attendance/scan`, method `rfid`) — the live feed gains a row and "N scans today" ticks up; duplicate reads are ignored (idempotent).
+6. **Sign out** (`POST /api/auth/logout`) → sign in at `/login.html` with the teacher account (`SEED_TEACHER_EMAIL` / `SEED_TEACHER_PASSWORD`) → `/teacher.html`: scoped "My weekly timetable", "My students' attendance" with one-click **P / A / L** corrections (`PATCH /api/teacher/attendance/:studentId`), and "Alerts for my students".
 
 ## Environment variables
 
@@ -210,7 +221,7 @@ No default admin credentials are committed anywhere in this repo — the server 
 npm test
 ```
 
-Runs the full suite against in-memory SQLite databases, exercising route handlers over real HTTP. Covers conflict detection, document extraction (including a mocked-LLM success path and real wire-format stub tests), the full forms upload→verify lifecycle, timetable generation and its manual-edit routes, attendance scan validation, roster CRUD with fee-status notifications, staffing predictions, and the dashboard's reactive store.
+Runs the full suite against in-memory SQLite databases, exercising route handlers over real HTTP. Covers conflict detection, document extraction (including a mocked-LLM success path and real wire-format stub tests), the full forms upload→verify lifecycle, timetable generation and its manual-edit routes — including multi-section global generation (no teacher/room/section double-bookings), teacher-qualification respect, section-filtered retrieval, single-slot edit isolation, and failed-generation atomicity — plus attendance scan validation, roster CRUD with fee-status notifications, staffing predictions, and the dashboard's reactive store.
 
 ## Deployment
 
