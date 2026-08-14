@@ -607,6 +607,9 @@ button { font-family: inherit; }
    content's intrinsic width — the standard fix so a wide table inside a
    panel can never force the whole page wider. */
 .app-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+/* Teacher page stacks its panels vertically so the attendance table gets the
+   full page width — all 7 date columns + correction controls fit at once. */
+.app-grid--stack { grid-template-columns: minmax(0, 1fr); }
 .app-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1); overflow: hidden; }
 .app-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.4rem; border-bottom: 1px solid var(--line); }
 .app-panel-head h2 { font-family: var(--sans); font-size: 1.02rem; font-weight: 600; color: var(--ink); }
@@ -884,28 +887,42 @@ button { font-family: inherit; }
 .tt--section .free { text-align: center; opacity: 0.55; }
 
 /* ==========================================================================
-   20. Teacher attendance table — aligned, wrapped, scrollable locally
+   20. Teacher attendance table — full-width, no horizontal scroll
    ========================================================================== */
-.att-table-wrap { overflow-x: auto; }
-.att-table-wrap .app-table { min-width: 720px; }
-.att-table-wrap .app-table th, .att-table-wrap .app-table td { white-space: nowrap; }
+/* The table spans its full-width panel; every date column and the correction
+   controls are visible at once (no horizontal scrollbar). */
+.att-table-wrap { overflow: visible; }
+.att-table-wrap .app-table { width: 100%; }
+.att-table-wrap .app-table th, .att-table-wrap .app-table td { white-space: nowrap; padding: 0.62rem 0.5rem; }
 /* Student names wrap instead of pushing the grid wider. */
-.att-table-wrap .app-table td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 170px; max-width: 240px; }
+.att-table-wrap .app-table td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 150px; }
 /* Date columns: fixed pitch so every row lines up under its column header. */
-.att-table-wrap .app-table th.num, .att-table-wrap .app-table td.num { text-align: center; min-width: 54px; }
+.att-table-wrap .app-table th.num, .att-table-wrap .app-table td.num { text-align: center; min-width: 42px; padding-inline: 0.35rem; }
 /* P / A / - indicators: identical dimensions regardless of letter. */
 .att-table-wrap .app-table .badge {
   display: inline-block; min-width: 2em; text-align: center;
   padding-inline: 0.35rem; box-sizing: border-box;
 }
-/* Correction controls: fixed column so Save never shifts between rows. */
-.att-table-wrap .app-table td:last-child { min-width: 215px; }
-.att-table-wrap .app-table .actions { display: flex; gap: 0.5rem; align-items: center; }
-.att-table-wrap .app-table .actions select {
-  flex: 1; min-width: 0; font-family: var(--sans); font-size: 0.85rem; color: var(--ink);
-  padding: 0.45rem 0.6rem; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff;
+/* Correction controls: three compact one-click P / A / L buttons, with the
+   status currently recorded for today filled in. */
+.att-table-wrap .app-table td:last-child { min-width: 128px; }
+.att-corr { display: inline-flex; gap: 0.3rem; align-items: center; }
+.att-corr .att-btn {
+  font-family: var(--mono); font-size: 0.72rem; font-weight: 600; line-height: 1;
+  min-width: 2em; padding: 0.34rem 0.4rem; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: #fff; color: var(--ink-muted);
+  cursor: pointer; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
-.att-table-wrap .app-table .actions .btn { min-width: 86px; justify-content: center; }
+.att-corr .att-btn:hover:not(.is-active):not(:disabled) { border-color: var(--navy); color: var(--navy); }
+.att-corr .att-btn:disabled { opacity: 0.55; cursor: wait; }
+.att-corr .att-btn--present.is-active { background: var(--teal); border-color: var(--teal); color: #fff; }
+.att-corr .att-btn--absent.is-active { background: var(--red); border-color: var(--red); color: #fff; }
+.att-corr .att-btn--late.is-active { background: var(--gold); border-color: var(--gold); color: var(--navy); }
+/* Tiny screens only: fall back to a locally scrollable grid rather than
+   clipping (the panel clips overflow). Desktop and tablet never scroll. */
+@media (max-width: 640px) {
+  .att-table-wrap { overflow-x: auto; }
+}
 
 /* ==========================================================================
    21. Small-screen refinements for the app panels

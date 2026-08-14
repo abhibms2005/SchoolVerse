@@ -47,7 +47,7 @@
     </div>
   </div>
 
-  <div class="app-grid">
+  <div class="app-grid app-grid--stack">
     <!-- My students' attendance + manual correction -->
     <div class="app-panel">
       <div class="app-panel-head">
@@ -154,7 +154,7 @@
       th.title = d;
       hr.appendChild(th);
     });
-    hr.appendChild(h('th', '', ''));
+    hr.appendChild(h('th', '', 'Correct'));
     thead.appendChild(hr);
     table.appendChild(thead);
 
@@ -162,7 +162,6 @@
     state.students.forEach(function (s) {
       var tr = h('tr');
       tr.appendChild(h('td', '', s.name + ' · ' + s.class));
-      var lastChanged = null;
       days.forEach(function (d) {
         var td = h('td', 'num');
         var rec = byStudentDate[s.id + '|' + d];
@@ -172,40 +171,38 @@
           var cls = rec.status === 'present' ? 'badge--ok' : rec.status === 'late' ? 'badge--warning' : 'badge--urgent';
           td.appendChild(h('span', 'badge ' + cls, rec.status.charAt(0).toUpperCase()));
           td.title = rec.status + ' · via ' + rec.method;
-          lastChanged = { id: s.id, date: d, status: rec.status, el: td };
         }
         tr.appendChild(td);
       });
+      // One-click correction: P / A / L buttons, saving immediately to the
+      // same PATCH endpoint the old dropdown + Save used (today's column).
       var act = h('td', '');
-      var sel = h('select', '');
-      ['', 'present', 'absent', 'late'].forEach(function (v) {
-        var opt = h('option', '', v ? v.charAt(0).toUpperCase() + v.slice(1) : '— correct —');
-        opt.value = v;
-        sel.appendChild(opt);
+      var today = days[days.length - 1];
+      var todayRec = byStudentDate[s.id + '|' + today];
+      var activeStatus = todayRec ? todayRec.status : null;
+      var corr = h('div', 'att-corr');
+      [['present', 'P'], ['absent', 'A'], ['late', 'L']].forEach(function (pair) {
+        var key = pair[0];
+        var btn = h('button', 'att-btn att-btn--' + key + (activeStatus === key ? ' is-active' : ''), pair[1]);
+        btn.type = 'button';
+        btn.title = 'Mark ' + s.name + ' ' + key + ' for ' + today;
+        btn.addEventListener('click', function () {
+          if (btn.disabled) return;
+          var btns = corr.querySelectorAll('button');
+          for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
+          apiFetch('/api/teacher/attendance/' + s.id, { method: 'PATCH', body: { date: today, status: key } })
+            .then(function () {
+              loadAttendance();
+              flash('topError', s.name + ' marked ' + key + ' for ' + today + ' — saved');
+            })
+            .catch(function (err) {
+              for (var j = 0; j < btns.length; j++) btns[j].disabled = false;
+              errorTop('Could not save: ' + err.message);
+            });
+        });
+        corr.appendChild(btn);
       });
-      var go = h('button', 'btn btn--small btn--teal', 'Save');
-      go.disabled = true;
-      sel.addEventListener('change', function () { go.disabled = !sel.value; });
-      go.addEventListener('click', function () {
-        go.disabled = true;
-        go.textContent = 'Saving…';
-        var date = days[days.length - 1]; // corrections default to today; a real picker is overkill here
-        apiFetch('/api/teacher/attendance/' + s.id, { method: 'PATCH', body: { date: date, status: sel.value } })
-          .then(function () {
-            go.textContent = 'Save';
-            sel.value = '';
-            loadAttendance();
-            flash('topError', s.name + ' marked ' + sel.value + ' for ' + date + ' — scanned at the same endpoint real hardware uses');
-          })
-          .catch(function (err) {
-            go.textContent = 'Save';
-            errorTop('Could not save: ' + err.message);
-          });
-      });
-      var wrap = h('div', 'actions');
-      wrap.appendChild(sel);
-      wrap.appendChild(go);
-      act.appendChild(wrap);
+      act.appendChild(corr);
       tr.appendChild(act);
       tbody.appendChild(tr);
     });
