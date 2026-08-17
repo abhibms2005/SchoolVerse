@@ -116,6 +116,19 @@ router.post('/generate', (req, res) => {
   const flagged = scanAllConflicts(req.db);
   result.summary.conflicts = flagged.length;
 
+  // Generation rebuilt the grid wholesale: every clash / slot-linked staffing
+  // gap notification from the OLD grid referenced a slot row that was just
+  // deleted, and resolveResolvedIssues can only reconstruct fingerprints from
+  // LIVE rows — so without this, those stale notifications would stay open
+  // forever next to a grid that now reports "Conflicts: 0". Close them all
+  // here. The fresh grid's own issues are re-surfaced below: 0 conflicts by
+  // construction, and unplaced requirements become gen_gap_% rows, which
+  // notifyGeneratedGaps manages with its own fingerprint lifecycle.
+  req.db.prepare(
+    `UPDATE notifications SET resolved = 1
+      WHERE resolved = 0 AND type IN ('clash', 'staffing_gap') AND fingerprint NOT LIKE 'gen_gap_%'`
+  ).run();
+
   // Unresolved requirements ARE staffing gaps — surface them as notifications,
   // and record the generation time for /api/status.
   notifyGeneratedGaps(req.db, result.unresolved);

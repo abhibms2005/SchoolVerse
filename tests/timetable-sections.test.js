@@ -217,6 +217,40 @@ test('J: section filter + global generation coexist with the section list on leg
   assert.equal(nine.slots[0].class_section, '9A');
 });
 
+test('K: generation resolves stale clash/gap notifications from the old grid', async (t) => {
+  const { db, base, close } = await mountRouter(require('../routes/timetable'), TT);
+  t.after(close);
+  seedGenerator(db);
+
+  // Pre-generation grid with a deliberate clash (both sides) plus an
+  // unstaffed slot — exactly the kind of open items the seed ships with.
+  const lab = db.prepare(`SELECT id FROM rooms WHERE room_type = 'lab'`).get().id;
+  const iyer = db.prepare(`SELECT id FROM staff WHERE name = 'R. Iyer'`).get().id;
+  const das = db.prepare(`SELECT id FROM staff WHERE name = 'S. Das'`).get().id;
+  const ins = db.prepare(`INSERT INTO timetable_slots (day, period, subject, staff_id, room_id, class_section) VALUES (?, ?, ?, ?, ?, ?)`);
+  ins.run(0, 1, 'Physics', iyer, lab, '9A');
+  ins.run(0, 1, 'Physics', das, lab, '9B');        // room clash pair
+  ins.run(0, 2, 'Maths', null, null, '9A');         // staffing gap: no teacher
+
+  // Surface them the way a manual edit / background scan would.
+  const det = await fetch(`${base}${TT}/detect-conflicts`, { method: 'POST' });
+  assert.equal(det.status, 200);
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM notifications WHERE type = 'clash' AND resolved = 0`).get().c, 2, 'clash notifications exist for the old grid');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM notifications WHERE type = 'staffing_gap' AND resolved = 0`).get().c, 1, 'gap notification exists for the old grid');
+
+  // Regenerate: clean grid, zero conflicts.
+  const res = await generate(base);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.summary.conflicts, 0, 'generated grid has no conflicts');
+  assert.equal(body.summary.unresolved, 0);
+
+  // The old grid's notifications referenced deleted slot rows — they must be
+  // resolved so the queue matches the fresh grid ("Conflicts: 0").
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM notifications WHERE type = 'clash' AND resolved = 0`).get().c, 0, 'no open clash notifications survive regeneration');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM notifications WHERE type = 'staffing_gap' AND resolved = 0`).get().c, 0, 'no open staffing-gap notifications survive regeneration');
+});
+
 test('GET /api/timetable still returns active staff/room picklists for the editor', async (t) => {
   const { db, base, close } = await mountRouter(require('../routes/timetable'), TT);
   t.after(close);
